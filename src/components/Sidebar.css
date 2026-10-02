@@ -90,6 +90,22 @@
   box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
 }
 
+.status-dot.indexing {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
 .status-label {
   font-size: 13px;
   font-weight: 600;

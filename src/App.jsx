@@ -21,8 +21,15 @@ function App() {
     loading,
     adding,
     error,
+    indexing,
+    indexProgress,
+    totalFiles,
     addFolder,
     removeFolder,
+    reindexFolder,
+    reindexAll,
+    clearIndex,
+    formatRelativeTime,
   } = useFolders()
 
   const Page = PAGES[activePage] || HomePage
@@ -33,6 +40,8 @@ function App() {
         activePage={activePage}
         onNavigate={setActivePage}
         folderCount={folders.length}
+        indexing={indexing}
+        totalFiles={totalFiles}
       />
       <main className="main-area">
         <Page
@@ -40,8 +49,15 @@ function App() {
           loading={loading}
           adding={adding}
           error={error}
+          indexing={indexing}
+          indexProgress={indexProgress}
+          totalFiles={totalFiles}
           onAddFolder={addFolder}
           onRemoveFolder={removeFolder}
+          onReindexFolder={reindexFolder}
+          onReindexAll={reindexAll}
+          onClearIndex={clearIndex}
+          formatRelativeTime={formatRelativeTime}
           onNavigate={setActivePage}
         />
       </main>

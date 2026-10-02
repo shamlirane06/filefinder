@@ -57,7 +57,19 @@ const NAV_ITEMS = [
   },
 ]
 
-function Sidebar({ activePage, onNavigate, folderCount }) {
+function Sidebar({ activePage, onNavigate, folderCount, indexing, totalFiles }) {
+  const statusLabel = indexing ? 'Indexing' : 'Ready'
+  let statusHint = 'Indexing will start after you add folders.'
+
+  if (indexing) {
+    statusHint = 'Scanning selected folders…'
+  } else if (folderCount > 0) {
+    statusHint =
+      totalFiles > 0
+        ? `${totalFiles.toLocaleString()} files indexed`
+        : `${folderCount} folder${folderCount === 1 ? '' : 's'} selected`
+  }
+
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
@@ -86,14 +98,10 @@ function Sidebar({ activePage, onNavigate, folderCount }) {
 
       <div className="sidebar-status">
         <div className="status-row">
-          <span className="status-dot" aria-hidden="true" />
-          <span className="status-label">Ready</span>
+          <span className={`status-dot${indexing ? ' indexing' : ''}`} aria-hidden="true" />
+          <span className="status-label">{statusLabel}</span>
         </div>
-        <p className="status-hint">
-          {folderCount > 0
-            ? `${folderCount} folder${folderCount === 1 ? '' : 's'} selected`
-            : 'Indexing will start after you add folders.'}
-        </p>
+        <p className="status-hint">{statusHint}</p>
       </div>
     </aside>
   )

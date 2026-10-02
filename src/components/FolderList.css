@@ -58,6 +58,55 @@
   user-select: text;
 }
 
+.folder-index-meta {
+  margin-top: 4px;
+}
+
+.folder-index-status {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.folder-index-status.indexing {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.folder-index-status.muted {
+  color: var(--text-muted);
+}
+
+.folder-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.folder-reindex {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.folder-reindex:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--border-accent);
+  color: var(--accent);
+}
+
+.folder-reindex:disabled,
+.folder-remove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .folder-remove {
   flex-shrink: 0;
   width: 30px;
@@ -69,7 +118,7 @@
   transition: background var(--transition), color var(--transition);
 }
 
-.folder-remove:hover {
+.folder-remove:hover:not(:disabled) {
   background: #fef2f2;
   color: #dc2626;
 }

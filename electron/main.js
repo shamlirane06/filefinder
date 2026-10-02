@@ -2,6 +2,15 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
+import {
+  initDatabase,
+  getIndexedFolders,
+  getIndexStats,
+  removeIndexedFolder,
+  clearAllIndex,
+  closeDatabase,
+} from './services/database.js'
+import { indexFolder, indexFolders } from './services/fileIndexer.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -10,6 +19,8 @@ const isDev = !app.isPackaged
 const SETTINGS_FILE = 'selected-folders.json'
 
 let mainWindow = null
+let indexingInProgress = false
+let cancelIndexing = false
 
 function getSettingsPath() {
   return path.join(app.getPath('userData'), SETTINGS_FILE)
@@ -44,6 +55,89 @@ function saveSelectedFolders(folders) {
   }
 }
 
+function mergeFoldersWithIndex(folders) {
+  const indexed = getIndexedFolders()
+  const byPath = new Map(
+    indexed.map((item) => [item.path.toLowerCase(), item])
+  )
+
+  return folders.map((folder) => {
+    const meta = byPath.get(folder.path.toLowerCase())
+    return {
+      ...folder,
+      lastIndexedAt: meta?.lastIndexedAt ?? null,
+      fileCount: meta?.fileCount ?? 0,
+      indexStatus: meta?.status ?? 'pending',
+    }
+  })
+}
+
+function sendIndexProgress(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('index:progress', payload)
+  }
+}
+
+async function runIndexForFolders(folders) {
+  if (!folders.length) {
+    return { ok: true, results: [] }
+  }
+
+  if (indexingInProgress) {
+    return { ok: false, error: 'Indexing is already in progress.' }
+  }
+
+  indexingInProgress = true
+  cancelIndexing = false
+
+  sendIndexProgress({
+    status: 'indexing',
+    message: 'Indexing your files...',
+    indexed: 0,
+  })
+
+  try {
+    const results = await indexFolders(folders, {
+      onProgress: (progress) => {
+        sendIndexProgress(progress)
+      },
+      shouldCancel: () => cancelIndexing,
+    })
+
+    const stats = getIndexStats()
+    const totalIndexed = results.reduce((sum, r) => sum + (r.indexed || 0), 0)
+    const hasError = results.some((r) => r.status === 'error')
+
+    const summary = {
+      status: hasError && totalIndexed === 0 ? 'error' : 'ready',
+      indexed: totalIndexed,
+      totalFiles: stats.totalFiles,
+      folders: mergeFoldersWithIndex(loadSelectedFolders()),
+      message:
+        totalIndexed > 0
+          ? `Indexed ${totalIndexed.toLocaleString()} files. Your files are ready to search.`
+          : hasError
+            ? 'Indexing finished with errors.'
+            : 'No supported files found.',
+      results,
+    }
+
+    sendIndexProgress(summary)
+    return { ok: true, ...summary }
+  } catch (error) {
+    const failure = {
+      status: 'error',
+      message: error.message || 'Indexing failed',
+      folders: mergeFoldersWithIndex(loadSelectedFolders()),
+    }
+    sendIndexProgress(failure)
+    return { ok: false, ...failure }
+  } finally {
+    indexingInProgress = false
+    cancelIndexing = false
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1180,
@@ -72,7 +166,8 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await initDatabase()
   createWindow()
 
   app.on('activate', () => {
@@ -88,8 +183,12 @@ app.on('window-all-closed', () => {
   }
 })
 
+app.on('before-quit', () => {
+  closeDatabase()
+})
+
 ipcMain.handle('folders:get', () => {
-  return loadSelectedFolders()
+  return mergeFoldersWithIndex(loadSelectedFolders())
 })
 
 ipcMain.handle('folders:select', async () => {
@@ -118,18 +217,72 @@ ipcMain.handle('folders:select', async () => {
   folders.push(folder)
   saveSelectedFolders(folders)
 
-  return { alreadyExists: false, folder, folders }
+  // Index the newly added folder
+  const indexResult = await runIndexForFolders([folder])
+
+  return {
+    alreadyExists: false,
+    folder,
+    folders: mergeFoldersWithIndex(folders),
+    indexResult,
+  }
 })
 
-ipcMain.handle('folders:remove', (_event, folderPath) => {
+ipcMain.handle('folders:remove', async (_event, folderPath) => {
+  if (!folderPath || typeof folderPath !== 'string') {
+    throw new Error('Invalid folder path')
+  }
+
   const folders = loadSelectedFolders().filter(
     (f) => f.path.toLowerCase() !== folderPath.toLowerCase()
   )
   saveSelectedFolders(folders)
-  return folders
+
+  try {
+    removeIndexedFolder(folderPath)
+  } catch (error) {
+    console.error('Failed to remove folder from index:', error)
+  }
+
+  return mergeFoldersWithIndex(folders)
 })
 
 ipcMain.handle('folders:save', (_event, folders) => {
   const ok = saveSelectedFolders(folders)
-  return ok ? folders : loadSelectedFolders()
+  return ok ? mergeFoldersWithIndex(folders) : mergeFoldersWithIndex(loadSelectedFolders())
+})
+
+ipcMain.handle('index:getStatus', () => {
+  const stats = getIndexStats()
+  return {
+    indexing: indexingInProgress,
+    ...stats,
+    folders: mergeFoldersWithIndex(loadSelectedFolders()),
+  }
+})
+
+ipcMain.handle('index:reindex', async (_event, folderPath) => {
+  const folders = loadSelectedFolders()
+
+  if (folderPath) {
+    const folder = folders.find(
+      (f) => f.path.toLowerCase() === String(folderPath).toLowerCase()
+    )
+    if (!folder) {
+      return { ok: false, error: 'Folder is not in your selected list.' }
+    }
+    return runIndexForFolders([folder])
+  }
+
+  return runIndexForFolders(folders)
+})
+
+ipcMain.handle('index:clear', () => {
+  clearAllIndex()
+  return {
+    ok: true,
+    folders: mergeFoldersWithIndex(loadSelectedFolders()),
+    totalFiles: 0,
+    totalFolders: 0,
+  }
 })

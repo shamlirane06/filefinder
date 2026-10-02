@@ -8,8 +8,13 @@ function HomePage({
   loading,
   adding,
   error,
+  indexing,
+  indexProgress,
+  totalFiles,
   onAddFolder,
   onRemoveFolder,
+  onReindexFolder,
+  formatRelativeTime,
   onNavigate,
 }) {
   const [query, setQuery] = useState('')
@@ -19,6 +24,13 @@ function HomePage({
     if (!trimmed) return
     onNavigate('search')
   }
+
+  const progressStatus = indexProgress?.status
+  const showIndexCard =
+    indexing ||
+    progressStatus === 'indexing' ||
+    progressStatus === 'ready' ||
+    progressStatus === 'error'
 
   return (
     <div className="page home-page">
@@ -61,23 +73,59 @@ function HomePage({
             </svg>
             <span>
               {folders.length} folder{folders.length === 1 ? '' : 's'} selected
+              {totalFiles > 0 ? ` · ${totalFiles.toLocaleString()} indexed` : ''}
             </span>
           </div>
         </div>
 
         {error && <div className="error-banner">{error}</div>}
 
+        {showIndexCard && (
+          <div
+            className={`index-status-card${
+              progressStatus === 'ready'
+                ? ' ready'
+                : progressStatus === 'error'
+                  ? ' error'
+                  : ''
+            }`}
+          >
+            <div className="index-status-title">
+              {indexing || progressStatus === 'indexing'
+                ? 'Indexing your files...'
+                : progressStatus === 'error'
+                  ? 'Indexing issue'
+                  : 'Your files are ready to search.'}
+            </div>
+            {(indexing || progressStatus === 'indexing') && (
+              <div className="index-status-bar" aria-hidden="true">
+                <div className="index-status-bar-fill indeterminate" />
+              </div>
+            )}
+            <div className="index-status-detail">
+              {indexProgress?.message ||
+                (totalFiles > 0
+                  ? `Indexed ${totalFiles.toLocaleString()} files`
+                  : 'Preparing index…')}
+            </div>
+          </div>
+        )}
+
         <FolderList
           folders={folders}
           loading={loading}
+          indexing={indexing}
+          indexingFolderPath={indexProgress?.folderPath}
           onRemove={onRemoveFolder}
+          onReindex={onReindexFolder}
+          formatRelativeTime={formatRelativeTime}
         />
 
         <button
           type="button"
           className="add-folder-btn"
           onClick={onAddFolder}
-          disabled={adding || loading}
+          disabled={adding || loading || indexing}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path
@@ -87,7 +135,7 @@ function HomePage({
               strokeLinecap="round"
             />
           </svg>
-          {adding ? 'Opening…' : 'Add Folder'}
+          {adding ? 'Opening…' : indexing ? 'Indexing…' : 'Add Folder'}
         </button>
       </div>
     </div>

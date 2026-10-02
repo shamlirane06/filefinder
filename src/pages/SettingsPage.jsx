@@ -1,6 +1,14 @@
 import './SettingsPage.css'
 
-function SettingsPage({ folders, onNavigate }) {
+function SettingsPage({
+  folders,
+  indexing,
+  totalFiles,
+  onNavigate,
+  onReindexAll,
+  onClearIndex,
+  formatRelativeTime,
+}) {
   return (
     <div className="page settings-page">
       <div className="page-header">
@@ -24,6 +32,14 @@ function SettingsPage({ folders, onNavigate }) {
               <li key={folder.path}>
                 <strong>{folder.name}</strong>
                 <span>{folder.path}</span>
+                <span className="settings-folder-meta">
+                  {folder.lastIndexedAt
+                    ? `Last indexed: ${formatRelativeTime?.(folder.lastIndexedAt) || '—'}`
+                    : 'Not indexed yet'}
+                  {typeof folder.fileCount === 'number'
+                    ? ` · ${folder.fileCount.toLocaleString()} files`
+                    : ''}
+                </span>
               </li>
             ))}
           </ul>
@@ -35,6 +51,33 @@ function SettingsPage({ folders, onNavigate }) {
         >
           Manage folders on Home
         </button>
+      </section>
+
+      <section className="settings-section">
+        <h2>Index management</h2>
+        <p className="settings-desc">
+          {totalFiles > 0
+            ? `${totalFiles.toLocaleString()} files currently in the local index.`
+            : 'No files indexed yet. Add a folder on Home to start.'}
+        </p>
+        <div className="settings-actions">
+          <button
+            type="button"
+            className="settings-action-btn"
+            onClick={onReindexAll}
+            disabled={indexing || folders.length === 0}
+          >
+            {indexing ? 'Indexing…' : 'Re-index all folders'}
+          </button>
+          <button
+            type="button"
+            className="settings-action-btn danger"
+            onClick={onClearIndex}
+            disabled={indexing || totalFiles === 0}
+          >
+            Clear index
+          </button>
+        </div>
       </section>
 
       <section className="settings-section">
@@ -54,16 +97,9 @@ function SettingsPage({ folders, onNavigate }) {
       </section>
 
       <section className="settings-section">
-        <h2>Index management</h2>
-        <p className="settings-desc">
-          Indexing, rebuild, and clear-index controls will appear here after Phase 4.
-        </p>
-      </section>
-
-      <section className="settings-section">
         <h2>About</h2>
         <p className="settings-desc">
-          FileFinder AI v0.1.0 — Phase 1 foundation. Find, understand, and organize your files.
+          FileFinder AI v0.2.0 — Phase 2 indexing. Find, understand, and organize your files.
         </p>
       </section>
     </div>
