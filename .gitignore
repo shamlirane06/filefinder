@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Local test / index artifacts
+test-index-sample/
+*.sqlite
+*.sqlite-journal
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

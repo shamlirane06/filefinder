@@ -30,7 +30,8 @@ function loadSelectedFolders() {
   try {
     const settingsPath = getSettingsPath()
     if (fs.existsSync(settingsPath)) {
-      const data = fs.readFileSync(settingsPath, 'utf-8')
+      // Strip BOM if present (can appear from some Windows editors)
+      const data = fs.readFileSync(settingsPath, 'utf-8').replace(/^\uFEFF/, '')
       const parsed = JSON.parse(data)
       return Array.isArray(parsed.folders) ? parsed.folders : []
     }
