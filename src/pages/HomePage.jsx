@@ -2,6 +2,20 @@ import SearchBar from '../components/SearchBar'
 import FolderList from '../components/FolderList'
 import './HomePage.css'
 
+function formatFileSize(bytes) {
+  const size = Number(bytes)
+  if (!Number.isFinite(size) || size <= 0) return '0 B'
+  if (size < 1024) return `${size} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = size / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)} ${units[unit]}`
+}
+
 function HomePage({
   folders,
   loading,
@@ -27,15 +41,7 @@ function HomePage({
   }
 
   const progressStatus = indexProgress?.status
-  const indexedCount = indexProgress?.indexed ?? 0
-  const totalCount = indexProgress?.total ?? 0
-  const percent =
-    indexing && totalCount > 0
-      ? Math.min(100, Math.round((indexedCount / totalCount) * 100))
-      : null
   const showIndexCard =
-    indexing ||
-    progressStatus === 'indexing' ||
     progressStatus === 'ready' ||
     progressStatus === 'error'
 
@@ -107,27 +113,13 @@ function HomePage({
             }`}
           >
             <div className="index-status-title">
-              {indexing || progressStatus === 'indexing'
-                ? 'Indexing your files...'
-                : progressStatus === 'error'
-                  ? 'Indexing issue'
-                  : 'Your files are ready to search.'}
+              {progressStatus === 'error'
+                ? 'Indexing issue'
+                : 'Index complete'}
             </div>
-            {(indexing || progressStatus === 'indexing') && (
-              <div className="index-status-bar" aria-hidden="true">
-                <div
-                  className={`index-status-bar-fill${percent == null ? ' indeterminate' : ' determinate'}`}
-                  style={percent == null ? undefined : { width: `${percent}%` }}
-                />
-              </div>
-            )}
             <div className="index-status-detail">
-              {indexing || progressStatus === 'indexing'
-                ? `${(indexProgress?.indexed ?? 0).toLocaleString()} files indexed`
-                : indexProgress?.message ||
-                  (totalFiles > 0
-                    ? `${totalFiles.toLocaleString()} files indexed`
-                    : 'Preparing index…')}
+              {indexProgress?.message || `${totalFiles.toLocaleString()} files indexed`}
+              {progressStatus === 'ready' && ` · ${formatFileSize(indexProgress?.totalSize)}`}
             </div>
           </div>
         )}
@@ -136,6 +128,7 @@ function HomePage({
           folders={folders}
           loading={loading}
           indexing={indexing}
+          indexProgress={indexProgress}
           indexingFolderPath={indexProgress?.folderPath}
           onRemove={onRemoveFolder}
           onReindex={onReindexFolder}

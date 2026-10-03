@@ -2,6 +2,7 @@ import initSqlJs from 'sql.js'
 import fs from 'fs'
 import path from 'path'
 import { createRequire } from 'module'
+import { randomUUID } from 'crypto'
 import { app } from 'electron'
 
 const require = createRequire(import.meta.url)
@@ -36,19 +37,40 @@ export async function initDatabase() {
     db = new SQL.Database()
   }
 
+  db.run('PRAGMA foreign_keys = ON')
+
   db.run(`
     CREATE TABLE IF NOT EXISTS indexed_folders (
+      id TEXT NOT NULL UNIQUE,
       path TEXT PRIMARY KEY COLLATE NOCASE,
       name TEXT NOT NULL,
       last_indexed_at TEXT,
       file_count INTEGER DEFAULT 0,
+      total_size INTEGER DEFAULT 0,
       status TEXT DEFAULT 'pending'
     )
   `)
 
+  const folderColumns = new Set(
+    db.exec('PRAGMA table_info(indexed_folders)')[0]?.values.map((row) => row[1]) ?? []
+  )
+  if (!folderColumns.has('id')) db.run('ALTER TABLE indexed_folders ADD COLUMN id TEXT')
+  const migrateFolderSize = !folderColumns.has('total_size')
+  if (migrateFolderSize) {
+    db.run('ALTER TABLE indexed_folders ADD COLUMN total_size INTEGER DEFAULT 0')
+  }
+  const foldersWithoutId = db.exec(
+    "SELECT path FROM indexed_folders WHERE id IS NULL OR id = ''"
+  )[0]?.values ?? []
+  for (const [folderPath] of foldersWithoutId) {
+    db.run('UPDATE indexed_folders SET id = ? WHERE path = ?', [randomUUID(), folderPath])
+  }
+  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_indexed_folders_id ON indexed_folders(id)')
+
   db.run(`
     CREATE TABLE IF NOT EXISTS files (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      folder_id TEXT NOT NULL REFERENCES indexed_folders(id),
       filename TEXT NOT NULL,
       full_path TEXT NOT NULL UNIQUE COLLATE NOCASE,
       extension TEXT,
@@ -61,8 +83,40 @@ export async function initDatabase() {
     )
   `)
 
+  const fileColumns = new Set(
+    db.exec('PRAGMA table_info(files)')[0]?.values.map((row) => row[1]) ?? []
+  )
+  const migrateFileFolderId = !fileColumns.has('folder_id')
+  if (migrateFileFolderId) {
+    db.run('ALTER TABLE files ADD COLUMN folder_id TEXT REFERENCES indexed_folders(id)')
+  }
+  if (migrateFileFolderId) {
+    db.run(`
+      UPDATE files
+      SET folder_id = (
+        SELECT indexed_folders.id
+        FROM indexed_folders
+        WHERE indexed_folders.path = files.root_folder COLLATE NOCASE
+      )
+      WHERE folder_id IS NULL
+    `)
+  }
+  if (migrateFolderSize) {
+    db.run(`
+      UPDATE indexed_folders
+      SET total_size = (
+        SELECT COALESCE(SUM(files.size), 0)
+        FROM files
+        WHERE files.root_folder = indexed_folders.path COLLATE NOCASE
+      )
+    `)
+  }
+
   db.run(`
     CREATE INDEX IF NOT EXISTS idx_files_root ON files(root_folder)
+  `)
+  db.run(`
+    CREATE INDEX IF NOT EXISTS idx_files_folder_id ON files(folder_id)
   `)
   db.run(`
     CREATE INDEX IF NOT EXISTS idx_files_filename ON files(filename)
@@ -70,8 +124,19 @@ export async function initDatabase() {
   db.run(`
     CREATE INDEX IF NOT EXISTS idx_files_extension ON files(extension)
   `)
+  db.run(`
+    CREATE INDEX IF NOT EXISTS idx_files_path ON files(full_path)
+  `)
 
   // A crash mid-scan can leave folders stuck in "indexing".
+  // Discard partial rows written after a rebuild cleared the prior folder index.
+  db.run(`
+    DELETE FROM files
+    WHERE root_folder IN (
+      SELECT path FROM indexed_folders
+      WHERE status = 'indexing' AND file_count = 0
+    )
+  `)
   db.run(`
     UPDATE indexed_folders
     SET status = CASE
@@ -100,7 +165,7 @@ export function getIndexedFolder(folderPath) {
   const database = getDatabase()
   const stmt = database.prepare(
     `
-    SELECT path, name, last_indexed_at, file_count, status
+    SELECT id, path, name, last_indexed_at, file_count, total_size, status
     FROM indexed_folders
     WHERE path = ? COLLATE NOCASE
     `
@@ -113,29 +178,44 @@ export function getIndexedFolder(folderPath) {
   stmt.free()
   if (!row) return null
   return {
+    id: row.id,
     path: row.path,
     name: row.name,
     lastIndexedAt: row.last_indexed_at,
     fileCount: row.file_count ?? 0,
+    totalSize: row.total_size ?? 0,
     status: row.status,
   }
 }
 
-export function upsertIndexedFolder({ path: folderPath, name, lastIndexedAt, fileCount, status }) {
+export function upsertIndexedFolder({ id, path: folderPath, name, lastIndexedAt, fileCount, totalSize, status }) {
   const database = getDatabase()
+  const previous = getIndexedFolder(folderPath)
+  const folderId = previous?.id || id || randomUUID()
   database.run(
     `
-    INSERT INTO indexed_folders (path, name, last_indexed_at, file_count, status)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO indexed_folders (id, path, name, last_indexed_at, file_count, total_size, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(path) DO UPDATE SET
+      id = excluded.id,
       name = excluded.name,
       last_indexed_at = excluded.last_indexed_at,
       file_count = excluded.file_count,
+      total_size = excluded.total_size,
       status = excluded.status
     `,
-    [folderPath, name, lastIndexedAt ?? null, fileCount ?? 0, status ?? 'pending']
+    [
+      folderId,
+      folderPath,
+      name,
+      lastIndexedAt ?? previous?.lastIndexedAt ?? null,
+      fileCount ?? previous?.fileCount ?? 0,
+      totalSize ?? previous?.totalSize ?? 0,
+      status ?? 'pending',
+    ]
   )
   persist()
+  return folderId
 }
 
 export function setFolderStatus(folderPath, status) {
@@ -169,10 +249,11 @@ export function insertFiles(files, { persistAfter = true } = {}) {
   try {
     const stmt = database.prepare(`
       INSERT INTO files (
-        filename, full_path, extension, file_type, size,
+        folder_id, filename, full_path, extension, file_type, size,
         created_at, modified_at, parent_folder, root_folder
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(full_path) DO UPDATE SET
+        folder_id = excluded.folder_id,
         filename = excluded.filename,
         extension = excluded.extension,
         file_type = excluded.file_type,
@@ -185,6 +266,7 @@ export function insertFiles(files, { persistAfter = true } = {}) {
 
     for (const file of files) {
       stmt.run([
+        file.folderId,
         file.filename,
         file.fullPath,
         file.extension,
@@ -213,7 +295,7 @@ export function insertFiles(files, { persistAfter = true } = {}) {
 export function getIndexedFolders() {
   const database = getDatabase()
   const result = database.exec(`
-    SELECT path, name, last_indexed_at, file_count, status
+    SELECT id, path, name, last_indexed_at, file_count, total_size, status
     FROM indexed_folders
     ORDER BY name COLLATE NOCASE
   `)
@@ -227,10 +309,12 @@ export function getIndexedFolders() {
       item[col] = row[i]
     })
     return {
+      id: item.id,
       path: item.path,
       name: item.name,
       lastIndexedAt: item.last_indexed_at,
       fileCount: item.file_count ?? 0,
+      totalSize: item.total_size ?? 0,
       status: item.status,
     }
   })
@@ -243,8 +327,10 @@ export function getIndexStats() {
 
   const totalFiles = fileCountResult.length ? fileCountResult[0].values[0][0] : 0
   const totalFolders = folderCountResult.length ? folderCountResult[0].values[0][0] : 0
+  const sizeResult = database.exec('SELECT COALESCE(SUM(size), 0) AS total_size FROM files')
+  const totalSize = sizeResult.length ? sizeResult[0].values[0][0] : 0
 
-  return { totalFiles, totalFolders }
+  return { totalFiles, totalFolders, totalSize }
 }
 
 export function getFileCountForFolder(folderPath) {
@@ -261,10 +347,22 @@ export function getFileCountForFolder(folderPath) {
   return count
 }
 
+export function getFileSizeForFolder(folderPath) {
+  const database = getDatabase()
+  const stmt = database.prepare(
+    `SELECT COALESCE(SUM(size), 0) AS total_size FROM files WHERE root_folder = ? COLLATE NOCASE`
+  )
+  stmt.bind([folderPath])
+  let totalSize = 0
+  if (stmt.step()) totalSize = stmt.getAsObject().total_size ?? 0
+  stmt.free()
+  return totalSize
+}
+
 export function getSampleFiles(limit = 20) {
   const database = getDatabase()
   const stmt = database.prepare(`
-    SELECT filename, full_path, extension, file_type, size,
+    SELECT folder_id, filename, full_path, extension, file_type, size,
            created_at, modified_at, parent_folder, root_folder
     FROM files
     ORDER BY filename COLLATE NOCASE

@@ -15,10 +15,25 @@ function FolderIcon() {
   )
 }
 
+function formatFileSize(bytes) {
+  const size = Number(bytes)
+  if (!Number.isFinite(size) || size <= 0) return '0 B'
+  if (size < 1024) return `${size} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = size / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)} ${units[unit]}`
+}
+
 function FolderList({
   folders,
   loading,
   indexing,
+  indexProgress,
   indexingFolderPath,
   onRemove,
   onReindex,
@@ -82,9 +97,16 @@ function FolderList({
             indexing &&
             indexingFolderPath &&
             indexingFolderPath.toLowerCase() === folder.path.toLowerCase()
+          const folderProgress = isIndexingThis ? indexProgress : null
 
           const lastIndexedLabel = formatRelativeTime?.(folder.lastIndexedAt)
           const folderHasError = folder.indexStatus === 'error'
+          const isIndexed = Boolean(folder.lastIndexedAt) || folder.indexStatus === 'ready'
+          const indexActionLabel = folderHasError
+            ? 'Try again'
+            : isIndexed
+              ? 'Re-index'
+              : 'Start indexing'
 
           return (
             <li key={folder.id || folder.path} className="folder-item">
@@ -98,12 +120,38 @@ function FolderList({
                 </div>
                 <div className="folder-index-meta">
                   {isIndexingThis || folder.indexStatus === 'indexing' ? (
-                    <span className="folder-index-status indexing">Indexing…</span>
+                    <>
+                      <span className="folder-index-status indexing">Indexing files…</span>
+                      {folderProgress && (
+                        <>
+                          <span className="folder-file-count">
+                            {folderProgress.total > 0
+                              ? `${(folderProgress.indexed ?? 0).toLocaleString()} / ${folderProgress.total.toLocaleString()} files`
+                              : `${(folderProgress.found ?? folderProgress.indexed ?? 0).toLocaleString()} files found`}
+                          </span>
+                          <div
+                            className="folder-progress-track"
+                            role="progressbar"
+                            aria-label={`Indexing ${folder.name}`}
+                            aria-valuemin={0}
+                            aria-valuemax={folderProgress.total || undefined}
+                            aria-valuenow={folderProgress.total > 0 ? folderProgress.indexed ?? 0 : undefined}
+                          >
+                            <div
+                              className={`folder-progress-fill${folderProgress.total > 0 ? ' determinate' : ' indeterminate'}`}
+                              style={folderProgress.total > 0
+                                ? { width: `${Math.min(100, Math.round(((folderProgress.indexed ?? 0) / folderProgress.total) * 100))}%` }
+                                : undefined}
+                            />
+                          </div>
+                        </>
+                      )}
+                    </>
                   ) : folderHasError ? (
                     <>
                       <span className="folder-file-count">
                         {typeof folder.fileCount === 'number'
-                          ? `${folder.fileCount.toLocaleString()} files`
+                          ? `${folder.fileCount.toLocaleString()} files · ${formatFileSize(folder.totalSize)}`
                           : '0 files'}
                       </span>
                       <span className="folder-index-status error">
@@ -114,13 +162,13 @@ function FolderList({
                     <>
                       <span className="folder-file-count">
                         {typeof folder.fileCount === 'number'
-                          ? `${folder.fileCount.toLocaleString()} files`
+                          ? `${folder.fileCount.toLocaleString()} files · ${formatFileSize(folder.totalSize)}`
                           : '0 files'}
                       </span>
                       <span className={`folder-index-status${lastIndexedLabel ? '' : ' muted'}`}>
                         {lastIndexedLabel
                           ? `Last indexed: ${lastIndexedLabel}`
-                          : 'Not indexed yet'}
+                          : 'Ready to index'}
                       </span>
                     </>
                   )}
@@ -132,10 +180,10 @@ function FolderList({
                   className="folder-reindex"
                   onClick={() => onReindex?.(folder.path)}
                   disabled={indexing}
-                  aria-label={`Re-index ${folder.name}`}
-                  title="Re-index folder"
+                  aria-label={`${indexActionLabel} ${folder.name}`}
+                  title={indexActionLabel}
                 >
-                  Re-index
+                  {indexActionLabel}
                 </button>
                 <button
                   type="button"

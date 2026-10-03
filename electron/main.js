@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url'
 import {
   initDatabase,
   getIndexedFolders,
+  getIndexedFolder,
   getIndexStats,
   removeIndexedFolder,
   clearAllIndex,
@@ -47,7 +48,8 @@ function loadSelectedFolders() {
         .filter((folder) => folder && typeof folder.path === 'string' && folder.path)
         .map((folder) => {
           const normalized = {
-            id: typeof folder.id === 'string' && folder.id ? folder.id : randomUUID(),
+            id: getIndexedFolder(folder.path)?.id ||
+              (typeof folder.id === 'string' && folder.id ? folder.id : randomUUID()),
             name: typeof folder.name === 'string' && folder.name
               ? folder.name
               : path.basename(folder.path),
@@ -102,8 +104,10 @@ function mergeFoldersWithIndex(folders) {
     const meta = byPath.get(folder.path.toLowerCase())
     return {
       ...folder,
+      id: meta?.id ?? folder.id,
       lastIndexedAt: meta?.lastIndexedAt ?? null,
       fileCount: meta?.fileCount ?? 0,
+      totalSize: meta?.totalSize ?? 0,
       indexStatus: meta?.status ?? 'pending',
     }
   })
@@ -160,6 +164,7 @@ async function runIndexForFolders(folders) {
 
     const stats = getIndexStats()
     const totalIndexed = results.reduce((sum, r) => sum + (r.indexed || 0), 0)
+    const skippedFiles = results.reduce((sum, result) => sum + (result.skippedErrors || 0), 0)
     const hasError = results.some(
       (r) => r.status === 'error' || r.status === 'folder-error' ||
         (r.skippedErrors > 0 && (r.indexed || 0) === 0)
@@ -176,13 +181,15 @@ async function runIndexForFolders(folders) {
       indexed: totalIndexed,
       total: totalIndexed,
       totalFiles: stats.totalFiles,
+      totalSize: stats.totalSize,
+      skippedFiles,
       folders: mergeFoldersWithIndex(loadSelectedFolders()),
       message:
         failure && totalIndexed === 0
           ? safeIndexingMessage(failure.message)
           : totalIndexed > 0
             ? skipped
-              ? `${totalIndexed.toLocaleString()} files indexed. Some inaccessible files were skipped.`
+              ? `${totalIndexed.toLocaleString()} files indexed · ${skippedFiles.toLocaleString()} skipped`
               : 'Your files are ready to search.'
             : 'No files were found in the selected folders.',
       results,
@@ -304,18 +311,11 @@ ipcMain.handle('folders:select', async () => {
     throw new Error('Could not save selected folders')
   }
 
-  // Return immediately so the UI can show progress while indexing runs.
-  setImmediate(() => {
-    runIndexForFolders([folder]).catch((error) => {
-      console.error('Failed to index folder:', error)
-    })
-  })
-
   return {
     alreadyExists: false,
     folder,
     folders: mergeFoldersWithIndex(folders),
-    indexingStarted: true,
+    indexingStarted: false,
   }
 })
 

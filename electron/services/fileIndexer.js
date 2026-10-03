@@ -1,35 +1,15 @@
 import fs from 'fs'
 import path from 'path'
+import { FILE_TYPES, shouldIgnoreDirectory } from '../config/indexing.js'
 import {
   clearFilesForFolder,
   insertFiles,
   persistDatabase,
   upsertIndexedFolder,
   getFileCountForFolder,
+  getFileSizeForFolder,
   getIndexedFolder,
 } from './database.js'
-
-const KNOWN_TYPES = {
-  '.pdf': 'PDF',
-  '.docx': 'Word Document',
-  '.doc': 'Word Document',
-  '.txt': 'Text',
-  '.md': 'Markdown',
-  '.pptx': 'PowerPoint',
-  '.ppt': 'PowerPoint',
-  '.xlsx': 'Excel',
-  '.xls': 'Excel',
-  '.csv': 'CSV',
-  '.jpg': 'Image',
-  '.jpeg': 'Image',
-  '.png': 'Image',
-  '.gif': 'Image',
-  '.webp': 'Image',
-  '.json': 'JSON',
-  '.xml': 'XML',
-  '.html': 'HTML',
-  '.rtf': 'Rich Text',
-}
 
 const BATCH_SIZE = 100
 const YIELD_EVERY = 40
@@ -50,7 +30,7 @@ function toIso(dateValue) {
 
 function getFileType(filePath) {
   const ext = path.extname(filePath).toLowerCase()
-  if (KNOWN_TYPES[ext]) return KNOWN_TYPES[ext]
+  if (FILE_TYPES[ext]) return FILE_TYPES[ext]
   if (!ext) return 'File'
   return ext.slice(1).toUpperCase()
 }
@@ -72,7 +52,7 @@ function isLinkLike(dirent, stats) {
 /**
  * Recursively walk a directory. Read-only: never modifies filesystem entries.
  */
-async function walkDirectory(currentDir, { onFile, onError, shouldCancel, visitedRef }) {
+async function walkDirectory(currentDir, { onFile, onError, shouldCancel, visitedRef, rootFolder }) {
   let entries
 
   try {
@@ -107,7 +87,8 @@ async function walkDirectory(currentDir, { onFile, onError, shouldCancel, visite
       if (isLinkLike(entry, stats)) continue
 
       if (stats.isDirectory()) {
-        await walkDirectory(fullPath, { onFile, onError, shouldCancel, visitedRef })
+        if (shouldIgnoreDirectory(fullPath, rootFolder)) continue
+        await walkDirectory(fullPath, { onFile, onError, shouldCancel, visitedRef, rootFolder })
         continue
       }
 
@@ -138,14 +119,18 @@ async function walkDirectory(currentDir, { onFile, onError, shouldCancel, visite
   }
 }
 
-async function countFiles(rootFolder, shouldCancel) {
+async function countFiles(rootFolder, shouldCancel, onProgress) {
   let total = 0
   let skippedErrors = 0
   await walkDirectory(rootFolder, {
+    rootFolder,
     shouldCancel,
     visitedRef: { count: 0 },
     onFile: () => {
       total += 1
+      if (total === 1 || total % YIELD_EVERY === 0) {
+        onProgress?.(total)
+      }
     },
     onError: () => {
       skippedErrors += 1
@@ -174,12 +159,18 @@ export async function indexFolder(folder, { onProgress, shouldCancel } = {}) {
     if (clearFiles) {
       clearFilesForFolder(folderPath)
     }
-    const previous = keepPrevious ? getIndexedFolder(folderPath) : null
+    const previous = getIndexedFolder(folderPath)
     upsertIndexedFolder({
+      id: previous?.id || folder.id,
       path: folderPath,
       name: folderName,
       lastIndexedAt: previous?.lastIndexedAt ?? null,
-      fileCount: previous?.fileCount ?? (keepPrevious ? getFileCountForFolder(folderPath) : 0),
+      fileCount: clearFiles
+        ? 0
+        : previous?.fileCount ?? (keepPrevious ? getFileCountForFolder(folderPath) : 0),
+      totalSize: clearFiles
+        ? 0
+        : previous?.totalSize ?? (keepPrevious ? getFileSizeForFolder(folderPath) : 0),
       status: 'error',
     })
     throw new Error(message)
@@ -202,11 +193,13 @@ export async function indexFolder(folder, { onProgress, shouldCancel } = {}) {
 
   const previous = getIndexedFolder(folderPath)
 
-  upsertIndexedFolder({
+  const folderId = upsertIndexedFolder({
+    id: previous?.id || folder.id,
     path: folderPath,
     name: folderName,
     lastIndexedAt: previous?.lastIndexedAt ?? null,
     fileCount: previous?.fileCount ?? 0,
+    totalSize: previous?.totalSize ?? 0,
     status: 'indexing',
   })
 
@@ -216,10 +209,21 @@ export async function indexFolder(folder, { onProgress, shouldCancel } = {}) {
     folderName,
     indexed: 0,
     total: 0,
+    found: 0,
     message: 'Indexing your files...',
   })
 
-  const scan = await countFiles(folderPath, shouldCancel)
+  const scan = await countFiles(folderPath, shouldCancel, (found) => {
+    onProgress?.({
+      status: 'indexing',
+      folderPath,
+      folderName,
+      indexed: 0,
+      found,
+      total: 0,
+      message: `${found.toLocaleString()} files found`,
+    })
+  })
   const total = scan.total
 
   if (total === 0 && scan.skippedErrors > 0) {
@@ -228,10 +232,12 @@ export async function indexFolder(folder, { onProgress, shouldCancel } = {}) {
 
   if (shouldCancel?.()) {
     upsertIndexedFolder({
+      id: folderId,
       path: folderPath,
       name: folderName,
       lastIndexedAt: previous?.lastIndexedAt ?? null,
       fileCount: getFileCountForFolder(folderPath),
+      totalSize: getFileSizeForFolder(folderPath),
       status: previous?.status === 'ready' ? 'ready' : 'pending',
     })
     return {
@@ -254,10 +260,12 @@ export async function indexFolder(folder, { onProgress, shouldCancel } = {}) {
   })
 
   upsertIndexedFolder({
+    id: folderId,
     path: folderPath,
     name: folderName,
     lastIndexedAt: previous?.lastIndexedAt ?? null,
     fileCount: 0,
+    totalSize: 0,
     status: 'indexing',
   })
   clearFilesForFolder(folderPath)
@@ -279,10 +287,11 @@ export async function indexFolder(folder, { onProgress, shouldCancel } = {}) {
   }
 
   await walkDirectory(folderPath, {
+    rootFolder: folderPath,
     shouldCancel,
     visitedRef: { count: 0 },
     onFile: (fileMeta) => {
-      batch.push({ ...fileMeta, rootFolder: folderPath })
+      batch.push({ ...fileMeta, folderId, rootFolder: folderPath })
       indexed += 1
 
       if (batch.length >= BATCH_SIZE) {
@@ -310,13 +319,16 @@ export async function indexFolder(folder, { onProgress, shouldCancel } = {}) {
   persistDatabase()
 
   const fileCount = getFileCountForFolder(folderPath)
+  const totalSize = getFileSizeForFolder(folderPath)
   const lastIndexedAt = new Date().toISOString()
 
   upsertIndexedFolder({
+    id: folderId,
     path: folderPath,
     name: folderName,
     lastIndexedAt,
     fileCount,
+    totalSize,
     status: 'ready',
   })
 
@@ -325,6 +337,7 @@ export async function indexFolder(folder, { onProgress, shouldCancel } = {}) {
     folderPath,
     folderName,
     indexed: fileCount,
+    totalSize,
     total: fileCount,
     skippedErrors,
     lastIndexedAt,
@@ -366,4 +379,4 @@ export async function indexFolders(folders, { onProgress, shouldCancel } = {}) {
   return results
 }
 
-export { KNOWN_TYPES as SUPPORTED_EXTENSIONS }
+export { FILE_TYPES as SUPPORTED_EXTENSIONS }
