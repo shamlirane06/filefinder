@@ -31,13 +31,6 @@ const KNOWN_TYPES = {
   '.rtf': 'Rich Text',
 }
 
-const SKIP_DIR_NAMES = new Set([
-  '$recycle.bin',
-  'system volume information',
-  '.trash',
-  '__macosx',
-])
-
 const BATCH_SIZE = 100
 const YIELD_EVERY = 40
 const PERSIST_EVERY = 500
@@ -60,10 +53,6 @@ function getFileType(filePath) {
   if (KNOWN_TYPES[ext]) return KNOWN_TYPES[ext]
   if (!ext) return 'File'
   return ext.slice(1).toUpperCase()
-}
-
-function shouldSkipDirectory(dirName) {
-  return SKIP_DIR_NAMES.has(dirName.toLowerCase())
 }
 
 function describeFsError(error) {
@@ -118,7 +107,6 @@ async function walkDirectory(currentDir, { onFile, onError, shouldCancel, visite
       if (isLinkLike(entry, stats)) continue
 
       if (stats.isDirectory()) {
-        if (shouldSkipDirectory(entry.name)) continue
         await walkDirectory(fullPath, { onFile, onError, shouldCancel, visitedRef })
         continue
       }
@@ -257,6 +245,13 @@ export async function indexFolder(folder, { onProgress, shouldCancel } = {}) {
     message: 'Indexing your files...',
   })
 
+  upsertIndexedFolder({
+    path: folderPath,
+    name: folderName,
+    lastIndexedAt: previous?.lastIndexedAt ?? null,
+    fileCount: 0,
+    status: 'indexing',
+  })
   clearFilesForFolder(folderPath)
 
   let indexed = 0

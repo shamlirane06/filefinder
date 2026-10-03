@@ -10,7 +10,7 @@ import {
   clearAllIndex,
   closeDatabase,
 } from './services/database.js'
-import { indexFolder, indexFolders } from './services/fileIndexer.js'
+import { indexFolders } from './services/fileIndexer.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -156,7 +156,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
     show: false,
   })
@@ -221,7 +221,9 @@ ipcMain.handle('folders:select', async () => {
 
   const folder = { name: folderName, path: folderPath }
   folders.push(folder)
-  saveSelectedFolders(folders)
+  if (!saveSelectedFolders(folders)) {
+    throw new Error('Could not save selected folders')
+  }
 
   // Return immediately so the UI can show progress while indexing runs.
   setImmediate(() => {
@@ -243,10 +245,20 @@ ipcMain.handle('folders:remove', async (_event, folderPath) => {
     throw new Error('Invalid folder path')
   }
 
-  const folders = loadSelectedFolders().filter(
+  const selectedFolders = loadSelectedFolders()
+  const selected = selectedFolders.some(
+    (f) => f.path.toLowerCase() === folderPath.toLowerCase()
+  )
+  if (!selected) {
+    throw new Error('Folder is not in your selected list.')
+  }
+
+  const folders = selectedFolders.filter(
     (f) => f.path.toLowerCase() !== folderPath.toLowerCase()
   )
-  saveSelectedFolders(folders)
+  if (!saveSelectedFolders(folders)) {
+    throw new Error('Could not save selected folders')
+  }
 
   try {
     removeIndexedFolder(folderPath)
@@ -255,11 +267,6 @@ ipcMain.handle('folders:remove', async (_event, folderPath) => {
   }
 
   return mergeFoldersWithIndex(folders)
-})
-
-ipcMain.handle('folders:save', (_event, folders) => {
-  const ok = saveSelectedFolders(folders)
-  return ok ? mergeFoldersWithIndex(folders) : mergeFoldersWithIndex(loadSelectedFolders())
 })
 
 ipcMain.handle('index:getStatus', () => {
