@@ -91,7 +91,10 @@ export function useFolders() {
     if (api?.onIndexProgress) {
       unsubscribe = api.onIndexProgress((progress) => {
         setIndexProgress(progress)
-        setIndexing(progress.status === 'indexing')
+
+        if (progress.status === 'indexing') {
+          setIndexing(true)
+        }
 
         if (Array.isArray(progress.folders)) {
           setFolders(progress.folders)
@@ -99,11 +102,9 @@ export function useFolders() {
 
         if (typeof progress.totalFiles === 'number') {
           setTotalFiles(progress.totalFiles)
-        } else if (progress.status === 'ready' && typeof progress.indexed === 'number') {
-          setTotalFiles(progress.indexed)
         }
 
-        if (progress.status === 'ready' || progress.status === 'error') {
+        if (progress.complete) {
           setIndexing(false)
           refreshStatus()
         }

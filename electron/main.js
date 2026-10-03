@@ -107,11 +107,15 @@ async function runIndexForFolders(folders) {
 
     const stats = getIndexStats()
     const totalIndexed = results.reduce((sum, r) => sum + (r.indexed || 0), 0)
-    const hasError = results.some((r) => r.status === 'error')
+    const hasError = results.some(
+      (r) => r.status === 'error' || r.status === 'folder-error'
+    )
 
     const summary = {
       status: hasError && totalIndexed === 0 ? 'error' : 'ready',
+      complete: true,
       indexed: totalIndexed,
+      total: totalIndexed,
       totalFiles: stats.totalFiles,
       folders: mergeFoldersWithIndex(loadSelectedFolders()),
       message:
@@ -128,6 +132,7 @@ async function runIndexForFolders(folders) {
   } catch (error) {
     const failure = {
       status: 'error',
+      complete: true,
       message: error.message || 'Indexing failed',
       folders: mergeFoldersWithIndex(loadSelectedFolders()),
     }

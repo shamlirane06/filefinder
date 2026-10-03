@@ -3,9 +3,10 @@ import path from 'path'
 import {
   clearFilesForFolder,
   insertFiles,
-  setFolderStatus,
+  persistDatabase,
   upsertIndexedFolder,
   getFileCountForFolder,
+  getIndexedFolder,
 } from './database.js'
 
 const KNOWN_TYPES = {
@@ -31,22 +32,15 @@ const KNOWN_TYPES = {
 }
 
 const SKIP_DIR_NAMES = new Set([
-  '.git',
-  'node_modules',
   '$recycle.bin',
   'system volume information',
   '.trash',
   '__macosx',
 ])
 
-const SKIP_FILE_NAMES = new Set([
-  'thumbs.db',
-  'desktop.ini',
-  '.ds_store',
-])
-
 const BATCH_SIZE = 100
 const YIELD_EVERY = 40
+const PERSIST_EVERY = 500
 
 function yieldTick() {
   return new Promise((resolve) => setImmediate(resolve))
@@ -72,15 +66,24 @@ function shouldSkipDirectory(dirName) {
   return SKIP_DIR_NAMES.has(dirName.toLowerCase())
 }
 
-function shouldSkipFile(fileName) {
-  return SKIP_FILE_NAMES.has(fileName.toLowerCase())
+function describeFsError(error) {
+  if (error.code === 'EACCES' || error.code === 'EPERM') return 'Permission denied'
+  if (error.code === 'ENOENT') return 'Path no longer exists'
+  if (error.code === 'EBUSY') return 'File is in use'
+  if (error.code === 'ELOOP') return 'Too many symbolic links'
+  return error.message || 'Inaccessible'
+}
+
+function isLinkLike(dirent, stats) {
+  if (dirent?.isSymbolicLink?.()) return true
+  if (stats?.isSymbolicLink?.()) return true
+  return Boolean(stats && (stats.mode & 0o170000) === 0o120000)
 }
 
 /**
- * Recursively walk a directory and collect file metadata.
- * Read-only: never modifies filesystem entries.
+ * Recursively walk a directory. Read-only: never modifies filesystem entries.
  */
-async function walkDirectory(rootFolder, currentDir, onFile, onError, state) {
+async function walkDirectory(currentDir, { onFile, onError, shouldCancel, visitedRef }) {
   let entries
 
   try {
@@ -89,55 +92,40 @@ async function walkDirectory(rootFolder, currentDir, onFile, onError, state) {
     onError?.({
       type: 'directory',
       path: currentDir,
-      message:
-        error.code === 'EACCES' || error.code === 'EPERM'
-          ? 'Permission denied'
-          : error.code === 'ENOENT'
-            ? 'Folder does not exist'
-            : error.message,
+      message: describeFsError(error),
     })
     return
   }
 
   for (const entry of entries) {
-    if (state.shouldCancel?.()) return
+    if (shouldCancel?.()) return
 
     const fullPath = path.join(currentDir, entry.name)
 
     try {
-      if (entry.isSymbolicLink()) {
-        continue
-      }
-
-      if (entry.isDirectory()) {
-        if (shouldSkipDirectory(entry.name)) continue
-        await walkDirectory(rootFolder, fullPath, onFile, onError, state)
-        continue
-      }
-
-      if (!entry.isFile()) continue
-      if (shouldSkipFile(entry.name)) continue
-
       let stats
       try {
-        stats = fs.statSync(fullPath)
+        stats = fs.lstatSync(fullPath)
       } catch (error) {
         onError?.({
-          type: 'file',
+          type: 'entry',
           path: fullPath,
-          message:
-            error.code === 'ENOENT'
-              ? 'File no longer exists'
-              : error.code === 'EACCES' || error.code === 'EPERM'
-                ? 'Permission denied'
-                : error.message,
+          message: describeFsError(error),
         })
+        continue
+      }
+
+      if (isLinkLike(entry, stats)) continue
+
+      if (stats.isDirectory()) {
+        if (shouldSkipDirectory(entry.name)) continue
+        await walkDirectory(fullPath, { onFile, onError, shouldCancel, visitedRef })
         continue
       }
 
       if (!stats.isFile()) continue
 
-      onFile({
+      onFile?.({
         filename: entry.name,
         fullPath,
         extension: path.extname(entry.name).toLowerCase(),
@@ -146,11 +134,10 @@ async function walkDirectory(rootFolder, currentDir, onFile, onError, state) {
         createdAt: toIso(stats.birthtimeMs || stats.ctimeMs),
         modifiedAt: toIso(stats.mtimeMs),
         parentFolder: path.dirname(fullPath),
-        rootFolder,
       })
 
-      state.visited += 1
-      if (state.visited % YIELD_EVERY === 0) {
+      visitedRef.count += 1
+      if (visitedRef.count % YIELD_EVERY === 0) {
         await yieldTick()
       }
     } catch (error) {
@@ -161,6 +148,19 @@ async function walkDirectory(rootFolder, currentDir, onFile, onError, state) {
       })
     }
   }
+}
+
+async function countFiles(rootFolder, shouldCancel) {
+  let total = 0
+  await walkDirectory(rootFolder, {
+    shouldCancel,
+    visitedRef: { count: 0 },
+    onFile: () => {
+      total += 1
+    },
+    onError: () => {},
+  })
+  return total
 }
 
 /**
@@ -179,44 +179,43 @@ export async function indexFolder(folder, { onProgress, shouldCancel } = {}) {
     throw new Error('Folder path must be absolute')
   }
 
-  if (!fs.existsSync(folderPath)) {
+  const markError = (message, { clearFiles = false, keepPrevious = false } = {}) => {
+    if (clearFiles) {
+      clearFilesForFolder(folderPath)
+    }
+    const previous = keepPrevious ? getIndexedFolder(folderPath) : null
     upsertIndexedFolder({
       path: folderPath,
       name: folderName,
-      lastIndexedAt: null,
-      fileCount: 0,
-      status: 'error',
-    })
-    throw new Error('Folder does not exist')
-  }
-
-  let stats
-  try {
-    stats = fs.statSync(folderPath)
-  } catch (error) {
-    const message =
-      error.code === 'EACCES' || error.code === 'EPERM'
-        ? 'Permission denied'
-        : error.message
-    upsertIndexedFolder({
-      path: folderPath,
-      name: folderName,
-      lastIndexedAt: null,
-      fileCount: 0,
+      lastIndexedAt: previous?.lastIndexedAt ?? null,
+      fileCount: previous?.fileCount ?? (keepPrevious ? getFileCountForFolder(folderPath) : 0),
       status: 'error',
     })
     throw new Error(message)
   }
 
-  if (!stats.isDirectory()) {
-    throw new Error('Selected path is not a folder')
+  if (!fs.existsSync(folderPath)) {
+    markError('Folder does not exist', { clearFiles: true })
   }
+
+  let stats
+  try {
+    stats = fs.lstatSync(folderPath)
+  } catch (error) {
+    markError(describeFsError(error), { keepPrevious: true })
+  }
+
+  if (isLinkLike(null, stats) || !stats.isDirectory()) {
+    markError('Selected path is not a folder')
+  }
+
+  const previous = getIndexedFolder(folderPath)
 
   upsertIndexedFolder({
     path: folderPath,
     name: folderName,
-    lastIndexedAt: null,
-    fileCount: 0,
+    lastIndexedAt: previous?.lastIndexedAt ?? null,
+    fileCount: previous?.fileCount ?? 0,
     status: 'indexing',
   })
 
@@ -225,6 +224,36 @@ export async function indexFolder(folder, { onProgress, shouldCancel } = {}) {
     folderPath,
     folderName,
     indexed: 0,
+    total: 0,
+    message: 'Indexing your files...',
+  })
+
+  const total = await countFiles(folderPath, shouldCancel)
+
+  if (shouldCancel?.()) {
+    upsertIndexedFolder({
+      path: folderPath,
+      name: folderName,
+      lastIndexedAt: previous?.lastIndexedAt ?? null,
+      fileCount: getFileCountForFolder(folderPath),
+      status: previous?.status === 'ready' ? 'ready' : 'pending',
+    })
+    return {
+      status: 'cancelled',
+      folderPath,
+      folderName,
+      indexed: 0,
+      skippedErrors: 0,
+      message: 'Indexing cancelled.',
+    }
+  }
+
+  onProgress?.({
+    status: 'indexing',
+    folderPath,
+    folderName,
+    indexed: 0,
+    total,
     message: 'Indexing your files...',
   })
 
@@ -233,41 +262,49 @@ export async function indexFolder(folder, { onProgress, shouldCancel } = {}) {
   let indexed = 0
   let skippedErrors = 0
   let batch = []
+  let sincePersist = 0
 
-  const flushBatch = () => {
+  const flushBatch = ({ persistAfter = false } = {}) => {
     if (!batch.length) return
-    insertFiles(batch)
+    insertFiles(batch, { persistAfter })
+    sincePersist += batch.length
     batch = []
+    if (sincePersist >= PERSIST_EVERY) {
+      persistDatabase()
+      sincePersist = 0
+    }
   }
 
-  await walkDirectory(
-    folderPath,
-    folderPath,
-    (fileMeta) => {
-      batch.push(fileMeta)
+  await walkDirectory(folderPath, {
+    shouldCancel,
+    visitedRef: { count: 0 },
+    onFile: (fileMeta) => {
+      batch.push({ ...fileMeta, rootFolder: folderPath })
       indexed += 1
 
       if (batch.length >= BATCH_SIZE) {
         flushBatch()
       }
 
-      if (indexed === 1 || indexed % YIELD_EVERY === 0) {
+      if (indexed === 1 || indexed % YIELD_EVERY === 0 || indexed === total) {
         onProgress?.({
           status: 'indexing',
           folderPath,
           folderName,
           indexed,
+          total,
+          skippedErrors,
           message: `${indexed.toLocaleString()} files indexed`,
         })
       }
     },
-    () => {
+    onError: () => {
       skippedErrors += 1
     },
-    { visited: 0, shouldCancel }
-  )
+  })
 
   flushBatch()
+  persistDatabase()
 
   const fileCount = getFileCountForFolder(folderPath)
   const lastIndexedAt = new Date().toISOString()
@@ -281,13 +318,17 @@ export async function indexFolder(folder, { onProgress, shouldCancel } = {}) {
   })
 
   const result = {
-    status: 'ready',
+    status: 'folder-complete',
     folderPath,
     folderName,
     indexed: fileCount,
+    total: fileCount,
     skippedErrors,
     lastIndexedAt,
-    message: 'Your files are ready to search.',
+    message:
+      skippedErrors > 0
+        ? `${fileCount.toLocaleString()} files indexed (${skippedErrors.toLocaleString()} skipped)`
+        : `${fileCount.toLocaleString()} files indexed`,
   }
 
   onProgress?.(result)
@@ -308,7 +349,7 @@ export async function indexFolders(folders, { onProgress, shouldCancel } = {}) {
       results.push(result)
     } catch (error) {
       const failure = {
-        status: 'error',
+        status: 'folder-error',
         folderPath: folder.path,
         folderName: folder.name,
         indexed: 0,
@@ -320,10 +361,6 @@ export async function indexFolders(folders, { onProgress, shouldCancel } = {}) {
   }
 
   return results
-}
-
-export function markFolderRemoved(folderPath) {
-  setFolderStatus(folderPath, 'removed')
 }
 
 export { KNOWN_TYPES as SUPPORTED_EXTENSIONS }

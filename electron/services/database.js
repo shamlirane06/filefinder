@@ -71,8 +71,22 @@ export async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_files_extension ON files(extension)
   `)
 
+  // A crash mid-scan can leave folders stuck in "indexing".
+  db.run(`
+    UPDATE indexed_folders
+    SET status = CASE
+      WHEN file_count > 0 THEN 'ready'
+      ELSE 'pending'
+    END
+    WHERE status = 'indexing'
+  `)
+
   persist()
   return db
+}
+
+export function persistDatabase() {
+  persist()
 }
 
 export function getDatabase() {
@@ -80,6 +94,31 @@ export function getDatabase() {
     throw new Error('Database not initialized')
   }
   return db
+}
+
+export function getIndexedFolder(folderPath) {
+  const database = getDatabase()
+  const stmt = database.prepare(
+    `
+    SELECT path, name, last_indexed_at, file_count, status
+    FROM indexed_folders
+    WHERE path = ? COLLATE NOCASE
+    `
+  )
+  stmt.bind([folderPath])
+  let row = null
+  if (stmt.step()) {
+    row = stmt.getAsObject()
+  }
+  stmt.free()
+  if (!row) return null
+  return {
+    path: row.path,
+    name: row.name,
+    lastIndexedAt: row.last_indexed_at,
+    fileCount: row.file_count ?? 0,
+    status: row.status,
+  }
 }
 
 export function upsertIndexedFolder({ path: folderPath, name, lastIndexedAt, fileCount, status }) {
@@ -121,7 +160,7 @@ export function clearFilesForFolder(folderPath) {
   persist()
 }
 
-export function insertFiles(files) {
+export function insertFiles(files, { persistAfter = true } = {}) {
   if (!files.length) return
 
   const database = getDatabase()
@@ -160,9 +199,13 @@ export function insertFiles(files) {
 
     stmt.free()
     database.run('COMMIT')
-    persist()
+    if (persistAfter) persist()
   } catch (error) {
-    database.run('ROLLBACK')
+    try {
+      database.run('ROLLBACK')
+    } catch {
+      // Ignore rollback errors when the transaction never started.
+    }
     throw error
   }
 }

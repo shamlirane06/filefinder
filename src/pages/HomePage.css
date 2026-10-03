@@ -162,6 +162,12 @@
   width: 45%;
 }
 
+.index-status-bar-fill.determinate {
+  animation: none;
+  transform: none;
+  transition: width 0.16s linear;
+}
+
 @keyframes index-slide {
   0% {
     transform: translateX(-120%);

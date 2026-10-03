@@ -26,6 +26,12 @@ function HomePage({
   }
 
   const progressStatus = indexProgress?.status
+  const indexedCount = indexProgress?.indexed ?? 0
+  const totalCount = indexProgress?.total ?? 0
+  const percent =
+    indexing && totalCount > 0
+      ? Math.min(100, Math.round((indexedCount / totalCount) * 100))
+      : null
   const showIndexCard =
     indexing ||
     progressStatus === 'indexing' ||
@@ -99,7 +105,10 @@ function HomePage({
             </div>
             {(indexing || progressStatus === 'indexing') && (
               <div className="index-status-bar" aria-hidden="true">
-                <div className="index-status-bar-fill indeterminate" />
+                <div
+                  className={`index-status-bar-fill${percent == null ? ' indeterminate' : ' determinate'}`}
+                  style={percent == null ? undefined : { width: `${percent}%` }}
+                />
               </div>
             )}
             <div className="index-status-detail">
