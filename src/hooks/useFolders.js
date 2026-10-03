@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 
-const api = typeof window !== 'undefined' ? window.fileFinder : null
+const DESKTOP_REQUIRED_MESSAGE = 'Please run FileFinder AI using the Electron desktop application.'
+
+function getDesktopApi() {
+  return typeof window !== 'undefined' ? window.fileFinder : null
+}
 
 function formatRelativeTime(iso) {
   if (!iso) return null
@@ -35,6 +39,7 @@ export function useFolders() {
   const [totalFiles, setTotalFiles] = useState(0)
 
   const refreshStatus = useCallback(async () => {
+    const api = getDesktopApi()
     if (!api?.getIndexStatus) return
     try {
       const status = await api.getIndexStatus()
@@ -51,11 +56,12 @@ export function useFolders() {
   useEffect(() => {
     let cancelled = false
     let unsubscribe = null
+    const api = getDesktopApi()
 
     async function load() {
       if (!api) {
         setLoading(false)
-        setError('Desktop APIs unavailable. Please run the Electron app.')
+        setError(DESKTOP_REQUIRED_MESSAGE)
         return
       }
 
@@ -118,7 +124,12 @@ export function useFolders() {
   }, [refreshStatus])
 
   const addFolder = useCallback(async () => {
-    if (!api || adding) return
+    const api = getDesktopApi()
+    if (!api) {
+      setError(DESKTOP_REQUIRED_MESSAGE)
+      return
+    }
+    if (adding) return
 
     setAdding(true)
     setError(null)
@@ -130,7 +141,7 @@ export function useFolders() {
       }
 
       if (result.alreadyExists) {
-        setError('That folder is already selected.')
+        setError('Folder already added.')
         return
       }
 
@@ -163,6 +174,7 @@ export function useFolders() {
   }, [adding, refreshStatus])
 
   const removeFolder = useCallback(async (folderPath) => {
+    const api = getDesktopApi()
     if (!api) return
 
     setError(null)
@@ -178,6 +190,7 @@ export function useFolders() {
   }, [refreshStatus])
 
   const reindexFolder = useCallback(async (folderPath) => {
+    const api = getDesktopApi()
     if (!api?.reindex || indexing) return
 
     setError(null)
@@ -210,6 +223,7 @@ export function useFolders() {
   }, [indexing, refreshStatus])
 
   const reindexAll = useCallback(async () => {
+    const api = getDesktopApi()
     if (!api?.reindex || indexing) return
 
     setError(null)
@@ -238,6 +252,7 @@ export function useFolders() {
   }, [indexing, refreshStatus])
 
   const clearIndex = useCallback(async () => {
+    const api = getDesktopApi()
     if (!api?.clearIndex || indexing) return
 
     setError(null)
@@ -263,6 +278,7 @@ export function useFolders() {
     loading,
     adding,
     error,
+    desktopAvailable: Boolean(getDesktopApi()?.selectFolder),
     indexing,
     indexProgress,
     totalFiles,

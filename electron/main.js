@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import { randomUUID } from 'crypto'
 import { fileURLToPath } from 'url'
 import {
   initDatabase,
@@ -11,6 +12,12 @@ import {
   closeDatabase,
 } from './services/database.js'
 import { indexFolders } from './services/fileIndexer.js'
+import { getSearchOptions, searchFiles } from './services/fileSearch.js'
+import {
+  copyIndexedPath,
+  openIndexedFile,
+  openIndexedFolder,
+} from './services/fileActions.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -33,7 +40,36 @@ function loadSelectedFolders() {
       // Strip BOM if present (can appear from some Windows editors)
       const data = fs.readFileSync(settingsPath, 'utf-8').replace(/^\uFEFF/, '')
       const parsed = JSON.parse(data)
-      return Array.isArray(parsed.folders) ? parsed.folders : []
+      if (!Array.isArray(parsed.folders)) return []
+
+      let needsSave = false
+      const folders = parsed.folders
+        .filter((folder) => folder && typeof folder.path === 'string' && folder.path)
+        .map((folder) => {
+          const normalized = {
+            id: typeof folder.id === 'string' && folder.id ? folder.id : randomUUID(),
+            name: typeof folder.name === 'string' && folder.name
+              ? folder.name
+              : path.basename(folder.path),
+            path: folder.path,
+            dateAdded: typeof folder.dateAdded === 'string' && folder.dateAdded
+              ? folder.dateAdded
+              : new Date().toISOString(),
+          }
+
+          if (
+            normalized.id !== folder.id ||
+            normalized.name !== folder.name ||
+            normalized.dateAdded !== folder.dateAdded
+          ) {
+            needsSave = true
+          }
+
+          return normalized
+        })
+
+      if (needsSave) saveSelectedFolders(folders)
+      return folders
     }
   } catch (error) {
     console.error('Failed to load selected folders:', error)
@@ -79,6 +115,23 @@ function sendIndexProgress(payload) {
   }
 }
 
+function safeIndexingMessage(message) {
+  const value = String(message || '').toLowerCase()
+  if (value.includes('permission') || value.includes('eacces') || value.includes('eperm')) {
+    return 'Permission denied. Check that FileFinder AI can access this folder.'
+  }
+  if (value.includes('does not exist') || value.includes('no longer exists') || value.includes('enoent')) {
+    return 'This folder is no longer available. Remove it and select a valid folder.'
+  }
+  if (value.includes('not a folder') || value.includes('invalid folder')) {
+    return 'Please choose a valid folder.'
+  }
+  if (value.includes('could not be accessed')) {
+    return 'This folder could not be accessed. Check its permissions and try again.'
+  }
+  return 'The folder could not be indexed. Check that it is available and try again.'
+}
+
 async function runIndexForFolders(folders) {
   if (!folders.length) {
     return { ok: true, results: [] }
@@ -108,8 +161,14 @@ async function runIndexForFolders(folders) {
     const stats = getIndexStats()
     const totalIndexed = results.reduce((sum, r) => sum + (r.indexed || 0), 0)
     const hasError = results.some(
-      (r) => r.status === 'error' || r.status === 'folder-error'
+      (r) => r.status === 'error' || r.status === 'folder-error' ||
+        (r.skippedErrors > 0 && (r.indexed || 0) === 0)
     )
+    const failure = results.find((result) =>
+      result.status === 'folder-error' || result.status === 'error' ||
+      (result.skippedErrors > 0 && (result.indexed || 0) === 0)
+    )
+    const skipped = results.some((result) => result.skippedErrors > 0 && (result.indexed || 0) > 0)
 
     const summary = {
       status: hasError && totalIndexed === 0 ? 'error' : 'ready',
@@ -119,10 +178,12 @@ async function runIndexForFolders(folders) {
       totalFiles: stats.totalFiles,
       folders: mergeFoldersWithIndex(loadSelectedFolders()),
       message:
-        hasError && totalIndexed === 0
-          ? 'Indexing finished with errors.'
+        failure && totalIndexed === 0
+          ? safeIndexingMessage(failure.message)
           : totalIndexed > 0
-            ? 'Your files are ready to search.'
+            ? skipped
+              ? `${totalIndexed.toLocaleString()} files indexed. Some inaccessible files were skipped.`
+              : 'Your files are ready to search.'
             : 'No files were found in the selected folders.',
       results,
     }
@@ -133,7 +194,7 @@ async function runIndexForFolders(folders) {
     const failure = {
       status: 'error',
       complete: true,
-      message: error.message || 'Indexing failed',
+      message: safeIndexingMessage(error.message),
       folders: mergeFoldersWithIndex(loadSelectedFolders()),
     }
     sendIndexProgress(failure)
@@ -148,8 +209,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1180,
     height: 780,
-    minWidth: 900,
-    minHeight: 600,
+    minWidth: 760,
+    minHeight: 520,
     title: 'FileFinder AI',
     backgroundColor: '#ffffff',
     webPreferences: {
@@ -163,6 +224,10 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
+  })
+
+  mainWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
+    console.error(`Failed to load the secure Electron bridge at ${preloadPath}:`, error)
   })
 
   if (isDev) {
@@ -198,10 +263,16 @@ ipcMain.handle('folders:get', () => {
 })
 
 ipcMain.handle('folders:select', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openDirectory'],
-    title: 'Select a folder to index',
-  })
+  let result
+  try {
+    result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+      title: 'Select a folder to index',
+    })
+  } catch (error) {
+    console.error('Failed to open folder picker:', error)
+    throw new Error('Could not open the folder picker.')
+  }
 
   if (result.canceled || !result.filePaths.length) {
     return null
@@ -216,10 +287,18 @@ ipcMain.handle('folders:select', async () => {
   )
 
   if (alreadyExists) {
-    return { alreadyExists: true, folder: { name: folderName, path: folderPath } }
+    return {
+      alreadyExists: true,
+      folder: folders.find((folder) => folder.path.toLowerCase() === folderPath.toLowerCase()),
+    }
   }
 
-  const folder = { name: folderName, path: folderPath }
+  const folder = {
+    id: randomUUID(),
+    name: folderName,
+    path: folderPath,
+    dateAdded: new Date().toISOString(),
+  }
   folders.push(folder)
   if (!saveSelectedFolders(folders)) {
     throw new Error('Could not save selected folders')
@@ -302,4 +381,24 @@ ipcMain.handle('index:clear', () => {
     totalFiles: 0,
     totalFolders: 0,
   }
+})
+
+ipcMain.handle('search:options', () => {
+  return getSearchOptions(loadSelectedFolders())
+})
+
+ipcMain.handle('search:query', (_event, options) => {
+  return searchFiles(options, loadSelectedFolders())
+})
+
+ipcMain.handle('file:open', (_event, fullPath) => {
+  return openIndexedFile(fullPath, loadSelectedFolders())
+})
+
+ipcMain.handle('file:openFolder', (_event, fullPath) => {
+  return openIndexedFolder(fullPath, loadSelectedFolders())
+})
+
+ipcMain.handle('file:copyPath', (_event, fullPath) => {
+  return copyIndexedPath(fullPath, loadSelectedFolders())
 })

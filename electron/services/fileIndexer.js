@@ -140,15 +140,18 @@ async function walkDirectory(currentDir, { onFile, onError, shouldCancel, visite
 
 async function countFiles(rootFolder, shouldCancel) {
   let total = 0
+  let skippedErrors = 0
   await walkDirectory(rootFolder, {
     shouldCancel,
     visitedRef: { count: 0 },
     onFile: () => {
       total += 1
     },
-    onError: () => {},
+    onError: () => {
+      skippedErrors += 1
+    },
   })
-  return total
+  return { total, skippedErrors }
 }
 
 /**
@@ -216,7 +219,12 @@ export async function indexFolder(folder, { onProgress, shouldCancel } = {}) {
     message: 'Indexing your files...',
   })
 
-  const total = await countFiles(folderPath, shouldCancel)
+  const scan = await countFiles(folderPath, shouldCancel)
+  const total = scan.total
+
+  if (total === 0 && scan.skippedErrors > 0) {
+    markError('Folder could not be accessed', { keepPrevious: true })
+  }
 
   if (shouldCancel?.()) {
     upsertIndexedFolder({

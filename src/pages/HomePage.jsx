@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import SearchBar from '../components/SearchBar'
 import FolderList from '../components/FolderList'
 import './HomePage.css'
@@ -8,6 +7,7 @@ function HomePage({
   loading,
   adding,
   error,
+  desktopAvailable,
   indexing,
   indexProgress,
   totalFiles,
@@ -16,12 +16,13 @@ function HomePage({
   onReindexFolder,
   formatRelativeTime,
   onNavigate,
+  searchQuery,
+  onSearchQueryChange,
 }) {
-  const [query, setQuery] = useState('')
-
   function handleSearch(value) {
     const trimmed = value.trim()
     if (!trimmed) return
+    onSearchQueryChange(trimmed)
     onNavigate('search')
   }
 
@@ -50,12 +51,12 @@ function HomePage({
           </svg>
         </div>
         <h1 className="home-title">FileFinder AI</h1>
-        <p className="home-subtitle">Find your files easily, using natural language.</p>
+        <p className="home-subtitle">Find files by name, type, folder, or path.</p>
 
         <div className="home-search">
           <SearchBar
-            value={query}
-            onChange={setQuery}
+            value={searchQuery}
+            onChange={onSearchQueryChange}
             onSubmit={handleSearch}
           />
         </div>
@@ -84,7 +85,16 @@ function HomePage({
           </div>
         </div>
 
-        {error && <div className="error-banner">{error}</div>}
+        {!desktopAvailable ? (
+          <div className="desktop-required-banner" role="alert">
+            <strong>Desktop app required</strong>
+            <span>Please run FileFinder AI using the Electron desktop application.</span>
+          </div>
+        ) : error ? (
+          <div className={error === 'Folder already added.' ? 'info-banner' : 'error-banner'} role="alert">
+            {error}
+          </div>
+        ) : null}
 
         {showIndexCard && (
           <div

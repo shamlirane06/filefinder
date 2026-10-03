@@ -16,11 +16,13 @@ const PAGES = {
 
 function App() {
   const [activePage, setActivePage] = useState('home')
+  const [searchQuery, setSearchQuery] = useState('')
   const {
     folders,
     loading,
     adding,
     error,
+    desktopAvailable,
     indexing,
     indexProgress,
     totalFiles,
@@ -49,6 +51,7 @@ function App() {
           loading={loading}
           adding={adding}
           error={error}
+          desktopAvailable={desktopAvailable}
           indexing={indexing}
           indexProgress={indexProgress}
           totalFiles={totalFiles}
@@ -59,6 +62,8 @@ function App() {
           onClearIndex={clearIndex}
           formatRelativeTime={formatRelativeTime}
           onNavigate={setActivePage}
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
         />
       </main>
     </div>

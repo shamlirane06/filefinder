@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './FolderList.css'
 
 function FolderIcon() {
@@ -23,6 +24,35 @@ function FolderList({
   onReindex,
   formatRelativeTime,
 }) {
+  const [pendingRemoval, setPendingRemoval] = useState(null)
+  const cancelRemoveButton = useRef(null)
+
+  const closeRemoveDialog = useCallback(() => {
+    const trigger = pendingRemoval?.trigger
+    setPendingRemoval(null)
+    requestAnimationFrame(() => trigger?.focus())
+  }, [pendingRemoval])
+
+  useEffect(() => {
+    if (!pendingRemoval) return undefined
+
+    cancelRemoveButton.current?.focus()
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeRemoveDialog()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [closeRemoveDialog, pendingRemoval])
+
+  function confirmRemove() {
+    if (!pendingRemoval) return
+    onRemove?.(pendingRemoval.folder.path)
+    closeRemoveDialog()
+  }
+
   if (loading) {
     return (
       <div className="folder-list-card">
@@ -45,7 +75,7 @@ function FolderList({
   }
 
   return (
-    <div className="folder-list-card">
+    <div className="folder-list-card has-folders">
       <ul className="folder-list">
         {folders.map((folder) => {
           const isIndexingThis =
@@ -54,9 +84,10 @@ function FolderList({
             indexingFolderPath.toLowerCase() === folder.path.toLowerCase()
 
           const lastIndexedLabel = formatRelativeTime?.(folder.lastIndexedAt)
+          const folderHasError = folder.indexStatus === 'error'
 
           return (
-            <li key={folder.path} className="folder-item">
+            <li key={folder.id || folder.path} className="folder-item">
               <div className="folder-icon">
                 <FolderIcon />
               </div>
@@ -68,6 +99,17 @@ function FolderList({
                 <div className="folder-index-meta">
                   {isIndexingThis || folder.indexStatus === 'indexing' ? (
                     <span className="folder-index-status indexing">Indexing…</span>
+                  ) : folderHasError ? (
+                    <>
+                      <span className="folder-file-count">
+                        {typeof folder.fileCount === 'number'
+                          ? `${folder.fileCount.toLocaleString()} files`
+                          : '0 files'}
+                      </span>
+                      <span className="folder-index-status error">
+                        Folder unavailable. Check its permissions or select it again.
+                      </span>
+                    </>
                   ) : (
                     <>
                       <span className="folder-file-count">
@@ -98,7 +140,7 @@ function FolderList({
                 <button
                   type="button"
                   className="folder-remove"
-                  onClick={() => onRemove(folder.path)}
+                  onClick={(event) => setPendingRemoval({ folder, trigger: event.currentTarget })}
                   disabled={indexing}
                   aria-label={`Remove ${folder.name}`}
                   title="Remove folder"
@@ -117,6 +159,39 @@ function FolderList({
           )
         })}
       </ul>
+      {pendingRemoval && (
+        <div className="folder-dialog-backdrop">
+          <section
+            className="folder-remove-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="folder-remove-title"
+            aria-describedby="folder-remove-message"
+          >
+            <div className="folder-dialog-icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <h2 id="folder-remove-title">Remove Folder?</h2>
+            <p id="folder-remove-message">
+              Are you sure you want to remove this folder from FileFinder AI?
+            </p>
+            <div className="folder-dialog-folder-name">{pendingRemoval.folder.name}</div>
+            <div className="folder-dialog-folder-path" title={pendingRemoval.folder.path}>
+              {pendingRemoval.folder.path}
+            </div>
+            <div className="folder-dialog-actions">
+              <button type="button" className="folder-dialog-cancel" ref={cancelRemoveButton} onClick={closeRemoveDialog}>
+                Cancel
+              </button>
+              <button type="button" className="folder-dialog-confirm" onClick={confirmRemove}>
+                Remove
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   )
 }

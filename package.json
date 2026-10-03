@@ -14,7 +14,8 @@
     "electron": "electron .",
     "electron:wait": "wait-on http://127.0.0.1:5173 && electron .",
     "electron:dev": "concurrently -k \"cross-env BROWSER=none vite\" \"npm run electron:wait\"",
-    "test:index": "electron electron/scripts/test-index.js"
+    "test:index": "electron electron/scripts/test-index.js",
+    "test:search": "electron electron/scripts/test-search.js"
   },
   "dependencies": {
     "react": "^19.2.8",
