@@ -33,6 +33,7 @@ function SearchPage({
   indexing,
   desktopAvailable,
   onAddFolder,
+  onReindexFolder,
   searchQuery,
   onSearchQueryChange,
 }) {
@@ -50,6 +51,7 @@ function SearchPage({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
+  const [unavailableFolder, setUnavailableFolder] = useState('')
 
   const indexedFolders = folders.filter((folder) => Number(folder.fileCount) > 0)
   const hasIndexedFolders = indexedFolders.length > 0
@@ -101,6 +103,7 @@ function SearchPage({
     setSubmittedQuery(nextQuery)
     setHasSubmitted(true)
     setActionMessage('')
+    setUnavailableFolder('')
     setError('')
     setLoading(Boolean(api?.searchFiles && hasIndexedFolders))
     if (!api?.searchFiles) setError('Desktop search is unavailable. Please run the Electron app.')
@@ -130,6 +133,7 @@ function SearchPage({
     try {
       const result = await api[action](file.fullPath)
       setActionMessage(result?.ok ? successMessage : result?.error || 'The file action failed.')
+      setUnavailableFolder(result?.unavailable ? file.rootFolder : '')
     } catch {
       setActionMessage('The file action failed. Please try again.')
     }
@@ -222,6 +226,19 @@ function SearchPage({
 
           {error && <div className="search-error" role="alert">{error}</div>}
           {actionMessage && <div className="search-action-message" role="status">{actionMessage}</div>}
+          {unavailableFolder && (
+            <button
+              type="button"
+              className="search-add-folder"
+              onClick={() => {
+                onReindexFolder?.(unavailableFolder)
+                setUnavailableFolder('')
+              }}
+              disabled={indexing}
+            >
+              {indexing ? 'Re-indexing…' : 'Re-index folder'}
+            </button>
+          )}
 
           {loading ? (
             <p className="search-results-status" role="status">Searching indexed files…</p>

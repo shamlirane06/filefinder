@@ -37,7 +37,7 @@ function readRows(sql, values) {
 }
 
 function buildSearchWhere({ query, fileType, dateModified, folderPath }, roots) {
-  const clauses = [`f.root_folder IN (${roots.map(() => '?').join(', ')})`]
+  const clauses = [`LOWER(f.root_folder) IN (${roots.map(() => '?').join(', ')})`]
   const values = [...roots]
   const keyword = typeof query === 'string' ? query.trim() : ''
 
