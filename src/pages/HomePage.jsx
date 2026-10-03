@@ -103,10 +103,12 @@ function HomePage({
               </div>
             )}
             <div className="index-status-detail">
-              {indexProgress?.message ||
-                (totalFiles > 0
-                  ? `Indexed ${totalFiles.toLocaleString()} files`
-                  : 'Preparing index…')}
+              {indexing || progressStatus === 'indexing'
+                ? `${(indexProgress?.indexed ?? 0).toLocaleString()} files indexed`
+                : indexProgress?.message ||
+                  (totalFiles > 0
+                    ? `${totalFiles.toLocaleString()} files indexed`
+                    : 'Preparing index…')}
             </div>
           </div>
         )}

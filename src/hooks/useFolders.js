@@ -139,6 +139,16 @@ export function useFolders() {
         setFolders((prev) => [...prev, result.folder])
       }
 
+      if (result.indexingStarted) {
+        setIndexing(true)
+        setIndexProgress({
+          status: 'indexing',
+          folderPath: result.folder?.path,
+          indexed: 0,
+          message: 'Indexing your files...',
+        })
+      }
+
       if (result.indexResult?.totalFiles != null) {
         setTotalFiles(result.indexResult.totalFiles)
       }

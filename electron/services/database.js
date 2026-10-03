@@ -218,6 +218,24 @@ export function getFileCountForFolder(folderPath) {
   return count
 }
 
+export function getSampleFiles(limit = 20) {
+  const database = getDatabase()
+  const stmt = database.prepare(`
+    SELECT filename, full_path, extension, file_type, size,
+           created_at, modified_at, parent_folder, root_folder
+    FROM files
+    ORDER BY filename COLLATE NOCASE
+    LIMIT ?
+  `)
+  stmt.bind([limit])
+  const rows = []
+  while (stmt.step()) {
+    rows.push(stmt.getAsObject())
+  }
+  stmt.free()
+  return rows
+}
+
 export function clearAllIndex() {
   const database = getDatabase()
   database.run('DELETE FROM files')

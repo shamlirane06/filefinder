@@ -68,15 +68,19 @@ function FolderList({
                 <div className="folder-index-meta">
                   {isIndexingThis || folder.indexStatus === 'indexing' ? (
                     <span className="folder-index-status indexing">Indexing…</span>
-                  ) : lastIndexedLabel ? (
-                    <span className="folder-index-status">
-                      Last indexed: {lastIndexedLabel}
-                      {typeof folder.fileCount === 'number'
-                        ? ` · ${folder.fileCount.toLocaleString()} files`
-                        : ''}
-                    </span>
                   ) : (
-                    <span className="folder-index-status muted">Not indexed yet</span>
+                    <>
+                      <span className="folder-file-count">
+                        {typeof folder.fileCount === 'number'
+                          ? `${folder.fileCount.toLocaleString()} files`
+                          : '0 files'}
+                      </span>
+                      <span className={`folder-index-status${lastIndexedLabel ? '' : ' muted'}`}>
+                        {lastIndexedLabel
+                          ? `Last indexed: ${lastIndexedLabel}`
+                          : 'Not indexed yet'}
+                      </span>
+                    </>
                   )}
                 </div>
               </div>

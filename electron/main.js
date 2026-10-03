@@ -115,11 +115,11 @@ async function runIndexForFolders(folders) {
       totalFiles: stats.totalFiles,
       folders: mergeFoldersWithIndex(loadSelectedFolders()),
       message:
-        totalIndexed > 0
-          ? `Indexed ${totalIndexed.toLocaleString()} files. Your files are ready to search.`
-          : hasError
-            ? 'Indexing finished with errors.'
-            : 'No supported files found.',
+        hasError && totalIndexed === 0
+          ? 'Indexing finished with errors.'
+          : totalIndexed > 0
+            ? 'Your files are ready to search.'
+            : 'No files were found in the selected folders.',
       results,
     }
 
@@ -218,14 +218,18 @@ ipcMain.handle('folders:select', async () => {
   folders.push(folder)
   saveSelectedFolders(folders)
 
-  // Index the newly added folder
-  const indexResult = await runIndexForFolders([folder])
+  // Return immediately so the UI can show progress while indexing runs.
+  setImmediate(() => {
+    runIndexForFolders([folder]).catch((error) => {
+      console.error('Failed to index folder:', error)
+    })
+  })
 
   return {
     alreadyExists: false,
     folder,
     folders: mergeFoldersWithIndex(folders),
-    indexResult,
+    indexingStarted: true,
   }
 })
 

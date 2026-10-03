@@ -8,7 +8,7 @@ import {
   getFileCountForFolder,
 } from './database.js'
 
-const SUPPORTED_EXTENSIONS = {
+const KNOWN_TYPES = {
   '.pdf': 'PDF',
   '.docx': 'Word Document',
   '.doc': 'Word Document',
@@ -22,6 +22,12 @@ const SUPPORTED_EXTENSIONS = {
   '.jpg': 'Image',
   '.jpeg': 'Image',
   '.png': 'Image',
+  '.gif': 'Image',
+  '.webp': 'Image',
+  '.json': 'JSON',
+  '.xml': 'XML',
+  '.html': 'HTML',
+  '.rtf': 'Rich Text',
 }
 
 const SKIP_DIR_NAMES = new Set([
@@ -33,8 +39,18 @@ const SKIP_DIR_NAMES = new Set([
   '__macosx',
 ])
 
+const SKIP_FILE_NAMES = new Set([
+  'thumbs.db',
+  'desktop.ini',
+  '.ds_store',
+])
+
 const BATCH_SIZE = 100
-const PROGRESS_EVERY = 25
+const YIELD_EVERY = 40
+
+function yieldTick() {
+  return new Promise((resolve) => setImmediate(resolve))
+}
 
 function toIso(dateValue) {
   if (!dateValue) return null
@@ -45,25 +61,26 @@ function toIso(dateValue) {
   }
 }
 
-function isSupportedFile(filePath) {
-  const ext = path.extname(filePath).toLowerCase()
-  return Object.prototype.hasOwnProperty.call(SUPPORTED_EXTENSIONS, ext)
-}
-
 function getFileType(filePath) {
   const ext = path.extname(filePath).toLowerCase()
-  return SUPPORTED_EXTENSIONS[ext] || 'Other'
+  if (KNOWN_TYPES[ext]) return KNOWN_TYPES[ext]
+  if (!ext) return 'File'
+  return ext.slice(1).toUpperCase()
 }
 
 function shouldSkipDirectory(dirName) {
   return SKIP_DIR_NAMES.has(dirName.toLowerCase())
 }
 
+function shouldSkipFile(fileName) {
+  return SKIP_FILE_NAMES.has(fileName.toLowerCase())
+}
+
 /**
- * Recursively walk a directory and collect supported file metadata.
- * Never modifies filesystem entries — read-only.
+ * Recursively walk a directory and collect file metadata.
+ * Read-only: never modifies filesystem entries.
  */
-function walkDirectory(rootFolder, currentDir, onFile, onError) {
+async function walkDirectory(rootFolder, currentDir, onFile, onError, state) {
   let entries
 
   try {
@@ -72,14 +89,19 @@ function walkDirectory(rootFolder, currentDir, onFile, onError) {
     onError?.({
       type: 'directory',
       path: currentDir,
-      message: error.code === 'EACCES' || error.code === 'EPERM'
-        ? 'Permission denied'
-        : error.message,
+      message:
+        error.code === 'EACCES' || error.code === 'EPERM'
+          ? 'Permission denied'
+          : error.code === 'ENOENT'
+            ? 'Folder does not exist'
+            : error.message,
     })
     return
   }
 
   for (const entry of entries) {
+    if (state.shouldCancel?.()) return
+
     const fullPath = path.join(currentDir, entry.name)
 
     try {
@@ -89,12 +111,12 @@ function walkDirectory(rootFolder, currentDir, onFile, onError) {
 
       if (entry.isDirectory()) {
         if (shouldSkipDirectory(entry.name)) continue
-        walkDirectory(rootFolder, fullPath, onFile, onError)
+        await walkDirectory(rootFolder, fullPath, onFile, onError, state)
         continue
       }
 
       if (!entry.isFile()) continue
-      if (!isSupportedFile(fullPath)) continue
+      if (shouldSkipFile(entry.name)) continue
 
       let stats
       try {
@@ -103,11 +125,12 @@ function walkDirectory(rootFolder, currentDir, onFile, onError) {
         onError?.({
           type: 'file',
           path: fullPath,
-          message: error.code === 'ENOENT'
-            ? 'File no longer exists'
-            : error.code === 'EACCES' || error.code === 'EPERM'
-              ? 'Permission denied'
-              : error.message,
+          message:
+            error.code === 'ENOENT'
+              ? 'File no longer exists'
+              : error.code === 'EACCES' || error.code === 'EPERM'
+                ? 'Permission denied'
+                : error.message,
         })
         continue
       }
@@ -125,6 +148,11 @@ function walkDirectory(rootFolder, currentDir, onFile, onError) {
         parentFolder: path.dirname(fullPath),
         rootFolder,
       })
+
+      state.visited += 1
+      if (state.visited % YIELD_EVERY === 0) {
+        await yieldTick()
+      }
     } catch (error) {
       onError?.({
         type: 'entry',
@@ -139,7 +167,7 @@ function walkDirectory(rootFolder, currentDir, onFile, onError) {
  * Index a single user-selected folder into SQLite.
  * Replaces previous entries for this folder to avoid duplicates.
  */
-export async function indexFolder(folder, { onProgress } = {}) {
+export async function indexFolder(folder, { onProgress, shouldCancel } = {}) {
   const folderPath = folder.path
   const folderName = folder.name || path.basename(folderPath)
 
@@ -200,7 +228,6 @@ export async function indexFolder(folder, { onProgress } = {}) {
     message: 'Indexing your files...',
   })
 
-  // Remove previous entries for this folder, then insert fresh data
   clearFilesForFolder(folderPath)
 
   let indexed = 0
@@ -213,7 +240,7 @@ export async function indexFolder(folder, { onProgress } = {}) {
     batch = []
   }
 
-  walkDirectory(
+  await walkDirectory(
     folderPath,
     folderPath,
     (fileMeta) => {
@@ -224,19 +251,20 @@ export async function indexFolder(folder, { onProgress } = {}) {
         flushBatch()
       }
 
-      if (indexed % PROGRESS_EVERY === 0) {
+      if (indexed === 1 || indexed % YIELD_EVERY === 0) {
         onProgress?.({
           status: 'indexing',
           folderPath,
           folderName,
           indexed,
-          message: `Indexing your files... ${indexed.toLocaleString()} found`,
+          message: `${indexed.toLocaleString()} files indexed`,
         })
       }
     },
     () => {
       skippedErrors += 1
-    }
+    },
+    { visited: 0, shouldCancel }
   )
 
   flushBatch()
@@ -259,10 +287,7 @@ export async function indexFolder(folder, { onProgress } = {}) {
     indexed: fileCount,
     skippedErrors,
     lastIndexedAt,
-    message:
-      fileCount > 0
-        ? `Indexed ${fileCount.toLocaleString()} files`
-        : 'No supported files found in this folder',
+    message: 'Your files are ready to search.',
   }
 
   onProgress?.(result)
@@ -279,7 +304,7 @@ export async function indexFolders(folders, { onProgress, shouldCancel } = {}) {
     if (shouldCancel?.()) break
 
     try {
-      const result = await indexFolder(folder, { onProgress })
+      const result = await indexFolder(folder, { onProgress, shouldCancel })
       results.push(result)
     } catch (error) {
       const failure = {
@@ -301,4 +326,4 @@ export function markFolderRemoved(folderPath) {
   setFolderStatus(folderPath, 'removed')
 }
 
-export { SUPPORTED_EXTENSIONS }
+export { KNOWN_TYPES as SUPPORTED_EXTENSIONS }
