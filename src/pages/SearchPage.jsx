@@ -278,6 +278,11 @@ function SearchPage({
                 <p className="search-file-location" title={file.parentFolder}>
                   {file.parentFolder}
                 </p>
+                {file.aiMatch && (
+                  <p className="search-ai-explanation">
+                    <strong>Why this matched:</strong> {file.matchExplanation}
+                  </p>
+                )}
                 <div className="search-result-actions">
                   <button type="button" onClick={() => runFileAction('openFile', file, 'File opened.')}>Open File</button>
                   <button type="button" onClick={() => runFileAction('openFolder', file, 'Folder opened.')}>Open Folder</button>

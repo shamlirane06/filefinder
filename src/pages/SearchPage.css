@@ -110,6 +110,17 @@
   user-select: text;
 }
 
+.search-ai-explanation {
+  margin: 10px 0 0 54px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.search-ai-explanation strong {
+  color: var(--text-primary);
+}
+
 .search-result-actions {
   display: flex;
   flex-wrap: wrap;

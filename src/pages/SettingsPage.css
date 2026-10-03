@@ -108,3 +108,49 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.settings-ai-privacy,
+.settings-ai-config,
+.settings-ai-status,
+.settings-ai-message {
+  margin-top: 11px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-ai-config {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
+}
+
+.settings-ai-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 14px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.settings-ai-progress-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-app);
+}
+
+.settings-ai-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
+
+.settings-ai-progress small {
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

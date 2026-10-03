@@ -14,6 +14,7 @@ import {
 } from './services/database.js'
 import { indexFolders } from './services/fileIndexer.js'
 import { getSearchOptions, searchFiles } from './services/fileSearch.js'
+import { analyzeSelectedFiles, getUnderstandingStatus } from './services/fileUnderstanding.js'
 import {
   copyIndexedPath,
   openIndexedFile,
@@ -29,6 +30,7 @@ const SETTINGS_FILE = 'selected-folders.json'
 let mainWindow = null
 let indexingInProgress = false
 let cancelIndexing = false
+let aiAnalysisInProgress = false
 
 function getSettingsPath() {
   return path.join(app.getPath('userData'), SETTINGS_FILE)
@@ -141,8 +143,8 @@ async function runIndexForFolders(folders) {
     return { ok: true, results: [] }
   }
 
-  if (indexingInProgress) {
-    return { ok: false, error: 'Indexing is already in progress.' }
+  if (indexingInProgress || aiAnalysisInProgress) {
+    return { ok: false, error: 'Wait for indexing or AI analysis to finish.' }
   }
 
   indexingInProgress = true
@@ -320,6 +322,7 @@ ipcMain.handle('folders:select', async () => {
 })
 
 ipcMain.handle('folders:remove', async (_event, folderPath) => {
+  if (aiAnalysisInProgress) throw new Error('Wait for AI analysis to finish before removing a folder.')
   if (!folderPath || typeof folderPath !== 'string') {
     throw new Error('Invalid folder path')
   }
@@ -374,6 +377,7 @@ ipcMain.handle('index:reindex', async (_event, folderPath) => {
 })
 
 ipcMain.handle('index:clear', () => {
+  if (aiAnalysisInProgress) return { ok: false, error: 'Wait for AI analysis to finish before clearing the index.' }
   clearAllIndex()
   return {
     ok: true,
@@ -401,4 +405,28 @@ ipcMain.handle('file:openFolder', (_event, fullPath) => {
 
 ipcMain.handle('file:copyPath', (_event, fullPath) => {
   return copyIndexedPath(fullPath, loadSelectedFolders())
+})
+
+ipcMain.handle('ai:getStatus', () => getUnderstandingStatus(loadSelectedFolders()))
+
+ipcMain.handle('ai:analyze', async () => {
+  if (indexingInProgress || aiAnalysisInProgress) {
+    return { ok: false, message: 'Wait for the current indexing or analysis to finish.' }
+  }
+  const selectedFolders = loadSelectedFolders()
+  const sendProgress = (progress) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('ai:progress', progress)
+  }
+  aiAnalysisInProgress = true
+  try {
+    const result = await analyzeSelectedFiles(selectedFolders, { onProgress: sendProgress })
+    sendProgress({ ...result, status: result.ok ? 'complete' : 'error', complete: true })
+    return result
+  } catch {
+    const result = { ok: false, status: 'error', complete: true, message: 'AI analysis could not be completed. Please try again.' }
+    sendProgress(result)
+    return result
+  } finally {
+    aiAnalysisInProgress = false
+  }
 })

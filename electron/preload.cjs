@@ -15,11 +15,19 @@ contextBridge.exposeInMainWorld('fileFinder', {
   openFolder: (fullPath) => ipcRenderer.invoke('file:openFolder', fullPath),
   copyPath: (fullPath) => ipcRenderer.invoke('file:copyPath', fullPath),
 
+  getAiStatus: () => ipcRenderer.invoke('ai:getStatus'),
+  analyzeFilesWithAi: () => ipcRenderer.invoke('ai:analyze'),
+
   onIndexProgress: (callback) => {
     const listener = (_event, payload) => callback(payload)
     ipcRenderer.on('index:progress', listener)
     return () => {
       ipcRenderer.removeListener('index:progress', listener)
     }
+  },
+  onAiProgress: (callback) => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on('ai:progress', listener)
+    return () => ipcRenderer.removeListener('ai:progress', listener)
   },
 })

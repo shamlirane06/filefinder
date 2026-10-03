@@ -83,6 +83,26 @@ export async function initDatabase() {
     )
   `)
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS ai_file_metadata (
+      file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+      fingerprint TEXT NOT NULL,
+      document_type TEXT,
+      title TEXT,
+      description TEXT,
+      extracted_text TEXT,
+      keywords TEXT NOT NULL DEFAULT '[]',
+      entities TEXT NOT NULL DEFAULT '[]',
+      category TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      ai_processed INTEGER NOT NULL DEFAULT 0,
+      processed_at TEXT,
+      model TEXT,
+      processing_error TEXT
+    )
+  `)
+  db.run('CREATE INDEX IF NOT EXISTS idx_ai_metadata_status ON ai_file_metadata(status)')
+
   const fileColumns = new Set(
     db.exec('PRAGMA table_info(files)')[0]?.values.map((row) => row[1]) ?? []
   )
@@ -188,6 +208,105 @@ export function getIndexedFolder(folderPath) {
   }
 }
 
+function aiRootPaths(selectedFolders) {
+  return [...new Set((Array.isArray(selectedFolders) ? selectedFolders : [])
+    .map((item) => typeof item === 'string' ? item : item?.path)
+    .filter((item) => typeof item === 'string' && item.length)
+    .map((item) => item.toLowerCase()))]
+}
+
+function queryRows(sql, values = []) {
+  const statement = getDatabase().prepare(sql)
+  try {
+    statement.bind(values)
+    const rows = []
+    while (statement.step()) rows.push(statement.getAsObject())
+    return rows
+  } finally {
+    statement.free()
+  }
+}
+
+export function getAiCandidates(selectedFolders = []) {
+  const roots = aiRootPaths(selectedFolders)
+  if (!roots.length) return []
+  return queryRows(`
+    SELECT id, full_path AS fullPath, filename, extension, size, modified_at AS modifiedAt,
+           root_folder AS rootFolder
+    FROM files
+    WHERE LOWER(root_folder) IN (${roots.map(() => '?').join(', ')})
+      AND LOWER(extension) IN ('.jpg', '.jpeg', '.png', '.webp', '.pdf')
+    ORDER BY full_path COLLATE NOCASE
+  `, roots)
+}
+
+export function getAiMetadata(fileId) {
+  return queryRows(`
+    SELECT fingerprint, document_type AS documentType, title, description,
+           extracted_text AS extractedText, keywords, entities, category,
+           status, processed_at AS processedAt, model, processing_error AS processingError
+    FROM ai_file_metadata WHERE file_id = ? LIMIT 1
+  `, [fileId])[0] ?? null
+}
+
+export function setAiMetadata(fileId, metadata) {
+  getDatabase().run(`
+    INSERT INTO ai_file_metadata (
+      file_id, fingerprint, document_type, title, description, extracted_text,
+      keywords, entities, category, status, ai_processed, processed_at, model, processing_error
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(file_id) DO UPDATE SET
+      fingerprint = excluded.fingerprint,
+      document_type = excluded.document_type,
+      title = excluded.title,
+      description = excluded.description,
+      extracted_text = excluded.extracted_text,
+      keywords = excluded.keywords,
+      entities = excluded.entities,
+      category = excluded.category,
+      status = excluded.status,
+      ai_processed = excluded.ai_processed,
+      processed_at = excluded.processed_at,
+      model = excluded.model,
+      processing_error = excluded.processing_error
+  `, [
+    fileId,
+    metadata.fingerprint,
+    metadata.documentType ?? null,
+    metadata.title ?? null,
+    metadata.description ?? null,
+    metadata.extractedText ?? null,
+    JSON.stringify(metadata.keywords ?? []),
+    JSON.stringify(metadata.entities ?? []),
+    metadata.category ?? null,
+    metadata.status,
+    metadata.status === 'completed' ? 1 : 0,
+    metadata.processedAt ?? null,
+    metadata.model ?? null,
+    metadata.processingError ?? null,
+  ])
+}
+
+export function getAiIndexStatus(selectedFolders = []) {
+  const files = getAiCandidates(selectedFolders)
+  const roots = aiRootPaths(selectedFolders)
+  const completed = roots.length
+    ? queryRows(`SELECT COUNT(*) AS count FROM ai_file_metadata m
+        JOIN files f ON f.id = m.file_id
+        WHERE LOWER(f.root_folder) IN (${roots.map(() => '?').join(', ')})
+          AND LOWER(f.extension) IN ('.jpg', '.jpeg', '.png', '.webp', '.pdf')
+          AND m.status = 'completed'`, roots)[0]?.count ?? 0
+    : 0
+  const failed = roots.length
+    ? queryRows(`SELECT COUNT(*) AS count FROM ai_file_metadata m
+        JOIN files f ON f.id = m.file_id
+        WHERE LOWER(f.root_folder) IN (${roots.map(() => '?').join(', ')})
+          AND LOWER(f.extension) IN ('.jpg', '.jpeg', '.png', '.webp', '.pdf')
+          AND m.status = 'failed'`, roots)[0]?.count ?? 0
+    : 0
+  return { supportedFiles: files.length, analyzed: completed, failed, remaining: Math.max(0, files.length - completed) }
+}
+
 export function upsertIndexedFolder({ id, path: folderPath, name, lastIndexedAt, fileCount, totalSize, status }) {
   const database = getDatabase()
   const previous = getIndexedFolder(folderPath)
@@ -278,6 +397,14 @@ export function insertFiles(files, { persistAfter = true } = {}) {
         file.rootFolder,
       ])
     }
+
+    const pendingAi = database.prepare(`
+      INSERT OR IGNORE INTO ai_file_metadata (file_id, fingerprint, status)
+      SELECT id, '', 'pending' FROM files WHERE full_path = ? COLLATE NOCASE
+        AND LOWER(extension) IN ('.jpg', '.jpeg', '.png', '.webp', '.pdf')
+    `)
+    for (const file of files) pendingAi.run([file.fullPath])
+    pendingAi.free()
 
     stmt.free()
     database.run('COMMIT')

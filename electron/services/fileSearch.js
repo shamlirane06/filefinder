@@ -19,6 +19,14 @@ function escapeLike(value) {
   return value.replace(/[!%_]/g, (character) => `!${character}`)
 }
 
+const QUERY_STOP_WORDS = new Set(['find', 'show', 'get', 'locate', 'search', 'for', 'my', 'the', 'a', 'an', 'please', 'me', 'this', 'that'])
+
+function queryTerms(query) {
+  const words = query.toLowerCase().split(/[^\p{L}\p{N}.]+/u).filter(Boolean)
+  const terms = words.filter((word) => !QUERY_STOP_WORDS.has(word))
+  return terms.length ? terms : words
+}
+
 function getDateCutoff(range) {
   const age = DATE_RANGES[range]
   return age ? new Date(Date.now() - age).toISOString() : null
@@ -42,15 +50,19 @@ function buildSearchWhere({ query, fileType, dateModified, folderPath }, roots) 
   const keyword = typeof query === 'string' ? query.trim() : ''
 
   if (keyword) {
-    const pattern = `%${escapeLike(keyword.toLowerCase())}%`
-    clauses.push(`(
-      LOWER(f.filename) LIKE ? ESCAPE '!'
-      OR LOWER(COALESCE(f.extension, '')) LIKE ? ESCAPE '!'
-      OR LOWER(COALESCE(f.root_folder, '')) LIKE ? ESCAPE '!'
-      OR LOWER(COALESCE(f.parent_folder, '')) LIKE ? ESCAPE '!'
-      OR LOWER(COALESCE(f.full_path, '')) LIKE ? ESCAPE '!'
-    )`)
-    values.push(pattern, pattern, pattern, pattern, pattern)
+    const fields = [
+      'LOWER(f.filename)', 'LOWER(COALESCE(f.extension, \'\'))',
+      'LOWER(COALESCE(f.root_folder, \'\'))', 'LOWER(COALESCE(f.parent_folder, \'\'))',
+      'LOWER(COALESCE(f.full_path, \'\'))', 'LOWER(COALESCE(m.document_type, \'\'))',
+      'LOWER(COALESCE(m.title, \'\'))', 'LOWER(COALESCE(m.description, \'\'))',
+      'LOWER(COALESCE(m.keywords, \'\'))', 'LOWER(COALESCE(m.extracted_text, \'\'))',
+      'LOWER(COALESCE(m.entities, \'\'))', 'LOWER(COALESCE(m.category, \'\'))',
+    ]
+    for (const term of queryTerms(keyword)) {
+      const pattern = `%${escapeLike(term)}%`
+      clauses.push(`(${fields.map((field) => `${field} LIKE ? ESCAPE '!'`).join(' OR ')})`)
+      values.push(...fields.map(() => pattern))
+    }
   }
 
   if (fileType) {
@@ -115,7 +127,9 @@ export function searchFiles(options = {}, selectedFolders = []) {
   if (!where.keyword && !hasFilter) return { results: [], total: 0 }
 
   const count = readRows(
-    `SELECT COUNT(*) AS total FROM files f WHERE ${where.sql}`,
+    `SELECT COUNT(*) AS total FROM files f
+     LEFT JOIN ai_file_metadata m ON m.file_id = f.id AND m.status = 'completed'
+     WHERE ${where.sql}`,
     where.values
   )[0]?.total ?? 0
   const order = getOrder(normalizedOptions.sort, where.keyword)
@@ -129,11 +143,30 @@ export function searchFiles(options = {}, selectedFolders = []) {
       f.created_at AS createdAt,
       f.modified_at AS modifiedAt,
       f.parent_folder AS parentFolder,
-      f.root_folder AS rootFolder
+      f.root_folder AS rootFolder,
+      m.document_type AS documentType,
+      m.title AS aiTitle,
+      m.description AS aiDescription,
+      m.extracted_text AS extractedText,
+      m.keywords AS aiKeywords,
+      m.entities AS aiEntities,
+      m.category AS aiCategory
     FROM files f
+    LEFT JOIN ai_file_metadata m ON m.file_id = f.id AND m.status = 'completed'
     WHERE ${where.sql}
     ORDER BY ${order.sql}
-  `, [...where.values, ...order.values])
+  `, [...where.values, ...order.values]).map((row) => {
+    const metadataText = [row.documentType, row.aiTitle, row.aiDescription, row.extractedText,
+      row.aiKeywords, row.aiEntities, row.aiCategory].filter(Boolean).join(' ').toLowerCase()
+    const aiMatch = Boolean(where.keyword && queryTerms(where.keyword).every((term) => metadataText.includes(term)))
+    return {
+      ...row,
+      aiMatch,
+      matchExplanation: aiMatch
+        ? `AI identified this as ${row.documentType || row.aiCategory || row.aiTitle || 'a matching document'}.`
+        : '',
+    }
+  })
 
   return { results, total: count }
 }
