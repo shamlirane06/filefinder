@@ -11,11 +11,15 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.*
+!.env.example
 
 # Local test / index artifacts
 test-index-sample/
 *.sqlite
 *.sqlite-journal
+preview-cache/
 
 # Editor directories and files
 .vscode/*

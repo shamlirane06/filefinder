@@ -10,6 +10,7 @@ import {
 } from './database.js'
 import { createOpenAiProvider, getAiProviderConfig } from './aiProvider.js'
 import { extractSelectablePdfText } from './pdfTextExtractor.js'
+import { isRegularFileInsideRoot } from './pathSecurity.js'
 
 const IMAGE_TYPES = new Map([
   ['.jpg', 'image/jpeg'],
@@ -102,6 +103,9 @@ export async function analyzeSelectedFiles(selectedFolders, {
       const isPdf = ext === '.pdf'
       if (!mimeType && !isPdf) throw new Error('Unsupported file type.')
       const maxBytes = isPdf ? MAX_PDF_BYTES : MAX_IMAGE_BYTES
+      if (!await isRegularFileInsideRoot(file.fullPath, file.rootFolder)) {
+        throw Object.assign(new Error('File is outside its selected folder.'), { code: 'EACCES' })
+      }
       const stats = await fs.stat(file.fullPath)
       if (!stats.isFile()) throw new Error('Unsupported file type.')
       if (stats.size > maxBytes) throw new Error(`File exceeds the ${isPdf ? '20 MB PDF' : '15 MB image'} analysis limit.`)

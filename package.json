@@ -21,7 +21,9 @@
     "test:preview": "electron electron/scripts/test-preview.js",
     "test:organization": "electron electron/scripts/test-organization.js",
     "test:assistant": "electron electron/scripts/test-assistant.js",
-    "test:dashboard": "electron electron/scripts/test-dashboard.js"
+    "test:dashboard": "electron electron/scripts/test-dashboard.js",
+    "test:security": "node electron/scripts/test-security.js",
+    "test:scale": "electron electron/scripts/test-scale.js"
   },
   "dependencies": {
     "react": "^19.2.8",

@@ -22,6 +22,7 @@ import { createOpenAiProvider } from './services/aiProvider.js'
 import { createOrganizationSuggestionService } from './services/organizationSuggestions.js'
 import { moveIndexedFile, undoIndexedFileMove } from './services/fileOrganization.js'
 import { createFileAssistantService } from './services/fileAssistant.js'
+import { isRegularFileInsideRoot } from './services/pathSecurity.js'
 import { analyzeSelectedFiles, getUnderstandingStatus } from './services/fileUnderstanding.js'
 import {
   copyIndexedPath,
@@ -247,6 +248,17 @@ function createWindow() {
     mainWindow.show()
   })
 
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
+    let allowed = false
+    try {
+      const target = new URL(targetUrl)
+      if (isDev) allowed = target.origin === 'http://127.0.0.1:5173'
+      else allowed = target.protocol === 'file:' && fileURLToPath(target).toLowerCase() === path.resolve(__dirname, '../dist/index.html').toLowerCase()
+    } catch { /* malformed navigation is rejected */ }
+    if (!allowed) event.preventDefault()
+  })
+
   mainWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
     console.error(`Failed to load the secure Electron bridge at ${preloadPath}:`, error)
   })
@@ -256,6 +268,23 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
+}
+
+function handleIpc(channel, listener) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame) {
+      throw new Error('Unauthorized IPC sender.')
+    }
+    let senderUrl
+    try { senderUrl = new URL(event.senderFrame.url) } catch { throw new Error('Unauthorized IPC sender.') }
+    const trustedLocation = isDev
+      ? senderUrl.origin === 'http://127.0.0.1:5173'
+      : senderUrl.protocol === 'file:' && fileURLToPath(senderUrl).toLowerCase() === path.resolve(__dirname, '../dist/index.html').toLowerCase()
+    if (!trustedLocation) {
+      throw new Error('Unauthorized IPC sender.')
+    }
+    return listener(event, ...args)
+  })
 }
 
 app.whenReady().then(async () => {
@@ -279,11 +308,11 @@ app.on('before-quit', () => {
   closeDatabase()
 })
 
-ipcMain.handle('folders:get', () => {
+handleIpc('folders:get', () => {
   return mergeFoldersWithIndex(loadSelectedFolders())
 })
 
-ipcMain.handle('folders:select', async () => {
+handleIpc('folders:select', async () => {
   let result
   try {
     result = await dialog.showOpenDialog(mainWindow, {
@@ -333,8 +362,8 @@ ipcMain.handle('folders:select', async () => {
   }
 })
 
-ipcMain.handle('folders:remove', async (_event, folderPath) => {
-  if (aiAnalysisInProgress || fileMoveInProgress) throw new Error('Wait for the current file operation to finish before removing a folder.')
+handleIpc('folders:remove', async (_event, folderPath) => {
+  if (indexingInProgress || aiAnalysisInProgress || fileMoveInProgress) throw new Error('Wait for the current file operation to finish before removing a folder.')
   if (!folderPath || typeof folderPath !== 'string') {
     throw new Error('Invalid folder path')
   }
@@ -363,7 +392,7 @@ ipcMain.handle('folders:remove', async (_event, folderPath) => {
   return mergeFoldersWithIndex(folders)
 })
 
-ipcMain.handle('index:getStatus', () => {
+handleIpc('index:getStatus', () => {
   const stats = getIndexStats()
   return {
     indexing: indexingInProgress,
@@ -372,7 +401,7 @@ ipcMain.handle('index:getStatus', () => {
   }
 })
 
-ipcMain.handle('dashboard:getData', () => {
+handleIpc('dashboard:getData', () => {
   try {
     return getDashboardData(loadSelectedFolders())
   } catch (error) {
@@ -381,7 +410,7 @@ ipcMain.handle('dashboard:getData', () => {
   }
 })
 
-ipcMain.handle('index:reindex', async (_event, folderPath) => {
+handleIpc('index:reindex', async (_event, folderPath) => {
   const folders = loadSelectedFolders()
 
   if (folderPath) {
@@ -397,8 +426,8 @@ ipcMain.handle('index:reindex', async (_event, folderPath) => {
   return runIndexForFolders(folders)
 })
 
-ipcMain.handle('index:clear', () => {
-  if (aiAnalysisInProgress || fileMoveInProgress) return { ok: false, error: 'Wait for the current file operation to finish before clearing the index.' }
+handleIpc('index:clear', () => {
+  if (indexingInProgress || aiAnalysisInProgress || fileMoveInProgress) return { ok: false, error: 'Wait for the current file operation to finish before clearing the index.' }
   clearAllIndex()
   return {
     ok: true,
@@ -408,13 +437,14 @@ ipcMain.handle('index:clear', () => {
   }
 })
 
-ipcMain.handle('search:options', () => {
+handleIpc('search:options', () => {
   return getSearchOptions(loadSelectedFolders())
 })
 
-ipcMain.handle('search:query', async (_event, options = {}) => {
+handleIpc('search:query', async (_event, options = {}) => {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) options = {}
   const selectedFolders = loadSelectedFolders()
-  const query = typeof options.query === 'string' ? options.query : ''
+  const query = typeof options.query === 'string' ? options.query.slice(0, 500) : ''
   const cacheKey = `${query.trim().toLocaleLowerCase()}\n${selectedFolders.map((folder) => `${folder.name}:${folder.path}`).join('\n')}`
   let understanding = searchIntentCache.get(cacheKey)?.expiresAt > Date.now()
     ? searchIntentCache.get(cacheKey).value
@@ -429,14 +459,17 @@ ipcMain.handle('search:query', async (_event, options = {}) => {
       if (searchIntentCache.size > 100) searchIntentCache.delete(searchIntentCache.keys().next().value)
     }
   }
-  const manualDateFilter = options.dateModified && options.dateModified !== 'any'
+  const validSorts = new Set(['relevance', 'newest', 'oldest', 'largest', 'name'])
+  const validDateFilters = new Set(['any', 'day', 'week', 'month', 'year'])
+  const manualDateFilter = typeof options.dateModified === 'string' && validDateFilters.has(options.dateModified) && options.dateModified !== 'any'
   const intent = understanding.intent
   const searchOptions = {
-    ...options,
     ...intent,
     query,
-    folderPath: options.folderPath || intent.folderPath,
-    dateModified: manualDateFilter ? options.dateModified : intent.dateModified || options.dateModified,
+    fileType: typeof options.fileType === 'string' ? options.fileType.trim().slice(0, 80) : '',
+    sort: typeof options.sort === 'string' && validSorts.has(options.sort) ? options.sort : 'relevance',
+    folderPath: typeof options.folderPath === 'string' ? options.folderPath.slice(0, 32768) || intent.folderPath : intent.folderPath,
+    dateModified: manualDateFilter ? options.dateModified : intent.dateModified || 'any',
     dateFrom: manualDateFilter ? undefined : intent.dateFrom,
     dateTo: manualDateFilter ? undefined : intent.dateTo,
     // These are internal assistant-only controls; never accept them from renderer IPC.
@@ -454,15 +487,15 @@ ipcMain.handle('search:query', async (_event, options = {}) => {
   }
 })
 
-ipcMain.handle('file:open', (_event, fullPath) => {
+handleIpc('file:open', (_event, fullPath) => {
   return openIndexedFile(fullPath, loadSelectedFolders())
 })
 
-ipcMain.handle('file:openFolder', (_event, fullPath) => {
+handleIpc('file:openFolder', (_event, fullPath) => {
   return openIndexedFolder(fullPath, loadSelectedFolders())
 })
 
-ipcMain.handle('file:copyPath', (_event, fullPath) => {
+handleIpc('file:copyPath', (_event, fullPath) => {
   return copyIndexedPath(fullPath, loadSelectedFolders())
 })
 
@@ -471,17 +504,17 @@ const filePreviewService = createFilePreviewService({
   cacheDirectory: path.join(app.getPath('userData'), 'preview-cache'),
 })
 
-ipcMain.handle('file:preview', async (_event, fullPath, requestedSize) => {
+handleIpc('file:preview', async (_event, fullPath, requestedSize) => {
   if (typeof fullPath !== 'string' || fullPath.length > 32768) return { status: 'unavailable' }
   const indexedFile = getIndexedFile(fullPath, loadSelectedFolders())
-  if (!indexedFile) return { status: 'unavailable' }
+  if (!indexedFile || !await isRegularFileInsideRoot(indexedFile.fullPath, indexedFile.rootFolder)) return { status: 'unavailable' }
   return filePreviewService.getPreview({
     filePath: indexedFile.fullPath,
     size: requestedSize === 'large' ? 'large' : 'thumbnail',
   })
 })
 
-ipcMain.handle('organization:suggest', async (_event, fullPaths) => {
+handleIpc('organization:suggest', async (_event, fullPaths) => {
   if (!Array.isArray(fullPaths)) return { results: [] }
   const service = createOrganizationSuggestionService({
     getOrganizationData: getFileOrganizationData,
@@ -490,7 +523,7 @@ ipcMain.handle('organization:suggest', async (_event, fullPaths) => {
   return { results: await service.suggestForFiles(fullPaths.slice(0, 50), loadSelectedFolders()) }
 })
 
-ipcMain.handle('organization:move', async (_event, fullPath, destinationRootPath, categoryPath) => {
+handleIpc('organization:move', async (_event, fullPath, destinationRootPath, categoryPath) => {
   if (indexingInProgress || aiAnalysisInProgress || fileMoveInProgress) {
     return { ok: false, error: 'Wait for the current file operation to finish before moving a file.' }
   }
@@ -512,7 +545,7 @@ ipcMain.handle('organization:move', async (_event, fullPath, destinationRootPath
   }
 })
 
-ipcMain.handle('organization:undo', async (_event, undoToken) => {
+handleIpc('organization:undo', async (_event, undoToken) => {
   if (typeof undoToken !== 'string') return { ok: false, error: 'This undo action is no longer available.' }
   const undo = pendingMoveUndos.get(undoToken)
   if (!undo) return { ok: false, error: 'This undo action is no longer available.' }
@@ -529,13 +562,14 @@ ipcMain.handle('organization:undo', async (_event, undoToken) => {
   }
 })
 
-ipcMain.handle('assistant:ask', async (_event, question, conversationId) => {
+handleIpc('assistant:ask', async (_event, question, conversationId) => {
+  if (typeof question !== 'string' || question.length > 600) return { answer: 'Enter a question of 600 characters or fewer.', files: [], contextPaths: [], aiUnavailable: false }
   const selectedFolders = loadSelectedFolders()
   const now = Date.now()
   for (const [token, session] of assistantSessions) {
     if (session.expiresAt <= now) assistantSessions.delete(token)
   }
-  const sessionExists = typeof conversationId === 'string' && assistantSessions.has(conversationId)
+  const sessionExists = typeof conversationId === 'string' && conversationId.length <= 100 && assistantSessions.has(conversationId)
   const sessionId = sessionExists ? conversationId : randomUUID()
   const contextPaths = sessionExists ? assistantSessions.get(sessionId).contextPaths : []
   let response
@@ -558,9 +592,9 @@ ipcMain.handle('assistant:ask', async (_event, question, conversationId) => {
   return { ...response, conversationId: sessionId }
 })
 
-ipcMain.handle('ai:getStatus', () => getUnderstandingStatus(loadSelectedFolders()))
+handleIpc('ai:getStatus', () => getUnderstandingStatus(loadSelectedFolders()))
 
-ipcMain.handle('ai:analyze', async () => {
+handleIpc('ai:analyze', async () => {
   if (indexingInProgress || aiAnalysisInProgress || fileMoveInProgress) {
     return { ok: false, message: 'Wait for the current indexing or analysis to finish.' }
   }
