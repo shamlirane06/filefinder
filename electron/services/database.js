@@ -250,6 +250,89 @@ export function getAiMetadata(fileId) {
   `, [fileId])[0] ?? null
 }
 
+export function getFileOrganizationData(fullPath, selectedFolders = []) {
+  const roots = aiRootPaths(selectedFolders)
+  if (!roots.length || typeof fullPath !== 'string' || !fullPath.trim()) return null
+  const row = queryRows(`
+    SELECT f.id, f.filename, f.full_path AS fullPath, f.extension, f.file_type AS fileType,
+      f.size, f.modified_at AS modifiedAt, f.parent_folder AS parentFolder,
+      f.root_folder AS rootFolder, m.document_type AS documentType, m.title,
+      m.description, m.keywords, m.extracted_text AS extractedText, m.status AS aiStatus
+    FROM files f LEFT JOIN ai_file_metadata m ON m.file_id = f.id
+    WHERE LOWER(f.full_path) = LOWER(?)
+      AND LOWER(f.root_folder) IN (${roots.map(() => '?').join(', ')})
+    LIMIT 1
+  `, [fullPath, ...roots])[0]
+  if (!row) return null
+  try {
+    row.keywords = JSON.parse(row.keywords || '[]')
+  } catch {
+    row.keywords = []
+  }
+  return row
+}
+
+export function updateIndexedFileLocation({ sourcePath, destinationPath, destinationRootPath, modifiedAt }) {
+  const database = getDatabase()
+  const row = queryRows(`
+    SELECT id, folder_id AS folderId, full_path AS fullPath, root_folder AS rootFolder,
+      parent_folder AS parentFolder, modified_at AS modifiedAt
+    FROM files WHERE LOWER(full_path) = LOWER(?) LIMIT 1
+  `, [sourcePath])[0]
+  const targetFolder = getIndexedFolder(destinationRootPath)
+  if (!row) throw new Error('The file is no longer present in the index.')
+  if (!targetFolder) throw new Error('The destination is not an indexed folder.')
+
+  const previous = { ...row }
+  let committed = false
+  try {
+    database.run('BEGIN TRANSACTION')
+    database.run(`
+      UPDATE files SET folder_id = ?, full_path = ?, root_folder = ?, parent_folder = ?, modified_at = ?
+      WHERE id = ?
+    `, [targetFolder.id, destinationPath, destinationRootPath, path.dirname(destinationPath), modifiedAt, row.id])
+    database.run(`
+      UPDATE indexed_folders SET
+        file_count = (SELECT COUNT(*) FROM files WHERE files.root_folder = indexed_folders.path COLLATE NOCASE),
+        total_size = (SELECT COALESCE(SUM(files.size), 0) FROM files WHERE files.root_folder = indexed_folders.path COLLATE NOCASE)
+      WHERE LOWER(path) IN (LOWER(?), LOWER(?))
+    `, [row.rootFolder, destinationRootPath])
+    database.run('COMMIT')
+    committed = true
+    persist()
+  } catch (error) {
+    if (!committed) {
+      try { database.run('ROLLBACK') } catch { /* transaction already closed */ }
+    } else {
+      try {
+        database.run('BEGIN TRANSACTION')
+        database.run(`
+          UPDATE files SET folder_id = ?, full_path = ?, root_folder = ?, parent_folder = ?, modified_at = ?
+          WHERE id = ?
+        `, [previous.folderId, previous.fullPath, previous.rootFolder, previous.parentFolder, previous.modifiedAt, row.id])
+        database.run(`
+          UPDATE indexed_folders SET
+            file_count = (SELECT COUNT(*) FROM files WHERE files.root_folder = indexed_folders.path COLLATE NOCASE),
+            total_size = (SELECT COALESCE(SUM(files.size), 0) FROM files WHERE files.root_folder = indexed_folders.path COLLATE NOCASE)
+          WHERE LOWER(path) IN (LOWER(?), LOWER(?))
+        `, [row.rootFolder, destinationRootPath])
+        database.run('COMMIT')
+        try { persist() } catch { /* preserve the original persistence failure */ }
+      } catch {
+        try { database.run('ROLLBACK') } catch { /* recovery could not start */ }
+      }
+    }
+    throw error
+  }
+
+  return queryRows(`
+    SELECT id, filename, full_path AS fullPath, extension, file_type AS fileType,
+      size, created_at AS createdAt, modified_at AS modifiedAt,
+      parent_folder AS parentFolder, root_folder AS rootFolder
+    FROM files WHERE id = ? LIMIT 1
+  `, [row.id])[0] ?? null
+}
+
 export function setAiMetadata(fileId, metadata) {
   getDatabase().run(`
     INSERT INTO ai_file_metadata (

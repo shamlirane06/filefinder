@@ -103,6 +103,15 @@ function SearchPage({
   const [aiSearchNotice, setAiSearchNotice] = useState('')
   const [unavailableFolder, setUnavailableFolder] = useState('')
   const [previewingFile, setPreviewingFile] = useState(null)
+  const [selectedResultPaths, setSelectedResultPaths] = useState([])
+  const [organizationSuggestions, setOrganizationSuggestions] = useState([])
+  const [organizationLoading, setOrganizationLoading] = useState(false)
+  const [reviewingSuggestion, setReviewingSuggestion] = useState(null)
+  const [reviewDestinationRoot, setReviewDestinationRoot] = useState('')
+  const [confirmingMove, setConfirmingMove] = useState(false)
+  const [organizationMoveError, setOrganizationMoveError] = useState('')
+  const [organizationUndoToken, setOrganizationUndoToken] = useState('')
+  const [refreshRevision, setRefreshRevision] = useState(0)
 
   const indexedFolders = folders.filter((folder) => Number(folder.fileCount) > 0)
   const hasIndexedFolders = indexedFolders.length > 0
@@ -152,7 +161,7 @@ function SearchPage({
     return () => {
       cancelled = true
     }
-  }, [filters, hasIndexedFolders, hasSubmitted, sort, submittedQuery])
+  }, [filters, hasIndexedFolders, hasSubmitted, sort, submittedQuery, refreshRevision])
 
   function handleSearch(value) {
     const nextQuery = value.trim()
@@ -213,6 +222,94 @@ function SearchPage({
       // Keep the bounded thumbnail already displayed in the preview modal.
     }
   }
+
+  async function requestOrganizationSuggestions(fullPaths) {
+    if (!api?.suggestOrganization) {
+      setActionMessage('Organization suggestions are available in the desktop app.')
+      return
+    }
+    setOrganizationLoading(true)
+    setActionMessage('')
+    try {
+      const response = await api.suggestOrganization(fullPaths)
+      const next = Array.isArray(response?.results) ? response.results.filter((item) => item?.file) : []
+      setOrganizationSuggestions((current) => {
+        const existing = new Map(current.map((item) => [item.file.fullPath, item]))
+        for (const suggestion of next) existing.set(suggestion.file.fullPath, suggestion)
+        return [...existing.values()]
+      })
+      const errors = (response?.results || []).filter((item) => item?.error)
+      if (errors.length) setActionMessage(errors[0].error)
+      setSelectedResultPaths([])
+    } catch {
+      setActionMessage('Organization suggestions could not be created. Please try again.')
+    } finally {
+      setOrganizationLoading(false)
+    }
+  }
+
+  function reviewSuggestion(suggestion) {
+    setReviewingSuggestion(suggestion)
+    setReviewDestinationRoot(suggestion.file.rootFolder)
+    setConfirmingMove(false)
+    setOrganizationMoveError('')
+  }
+
+  async function confirmOrganizationMove() {
+    if (!api?.moveOrganizedFile || !reviewingSuggestion || !reviewDestinationRoot) return
+    setOrganizationLoading(true)
+    setActionMessage('')
+    setOrganizationMoveError('')
+    try {
+      const response = await api.moveOrganizedFile(
+        reviewingSuggestion.file.fullPath,
+        reviewDestinationRoot,
+        [reviewingSuggestion.category, reviewingSuggestion.subcategory]
+      )
+      if (!response?.ok) {
+        setOrganizationMoveError(response?.error || 'The file could not be moved.')
+        return
+      }
+      setOrganizationUndoToken(response.undoToken || '')
+      setOrganizationSuggestions((current) => current.filter((item) => item.file.fullPath !== reviewingSuggestion.file.fullPath))
+      setSelectedResultPaths((current) => current.filter((item) => item !== reviewingSuggestion.file.fullPath))
+      setActionMessage('File moved.')
+      setReviewingSuggestion(null)
+      setConfirmingMove(false)
+      setRefreshRevision((value) => value + 1)
+    } catch {
+      setOrganizationMoveError('The file could not be moved. Please try again.')
+    } finally {
+      setOrganizationLoading(false)
+    }
+  }
+
+  async function undoOrganizationMove() {
+    if (!api?.undoOrganizedMove || !organizationUndoToken) return
+    setOrganizationLoading(true)
+    try {
+      const response = await api.undoOrganizedMove(organizationUndoToken)
+      setActionMessage(response?.ok ? 'File moved back to its previous location.' : response?.error || 'The move could not be undone.')
+      if (response?.ok) {
+        setOrganizationUndoToken('')
+        setRefreshRevision((value) => value + 1)
+      }
+    } catch {
+      setActionMessage('The move could not be undone. Please try again.')
+    } finally {
+      setOrganizationLoading(false)
+    }
+  }
+
+  function toggleResultSelection(fullPath) {
+    setSelectedResultPaths((current) => current.includes(fullPath)
+      ? current.filter((item) => item !== fullPath)
+      : [...current, fullPath])
+  }
+
+  const selectedIndexedResults = results.filter((file) => selectedResultPaths.includes(file.fullPath))
+  const destinationFolders = folders.filter((folder) => folder.indexStatus === 'ready')
+  const suggestedFolderName = destinationFolders.find((folder) => folder.path === reviewDestinationRoot)?.name || 'Selected folder'
 
   return (
     <div className="page search-page">
@@ -304,7 +401,14 @@ function SearchPage({
 
           {error && <div className="search-error" role="alert">{error}</div>}
           {aiSearchNotice && <div className="search-ai-notice" role="status">{aiSearchNotice}</div>}
-          {actionMessage && <div className="search-action-message" role="status">{actionMessage}</div>}
+          {actionMessage && (
+            <div className="search-action-message" role="status">
+              {actionMessage}
+              {organizationUndoToken && actionMessage === 'File moved.' && (
+                <button type="button" onClick={undoOrganizationMove} disabled={organizationLoading}>Undo</button>
+              )}
+            </div>
+          )}
           {unavailableFolder && (
             <button
               type="button"
@@ -343,8 +447,28 @@ function SearchPage({
           )}
 
           <div className="search-results" aria-live="polite">
+            {selectedIndexedResults.length > 0 && (
+              <div className="organization-selection-toolbar">
+                <span>{selectedIndexedResults.length} {selectedIndexedResults.length === 1 ? 'file' : 'files'} selected</span>
+                <button
+                  type="button"
+                  onClick={() => requestOrganizationSuggestions(selectedIndexedResults.map((file) => file.fullPath))}
+                  disabled={organizationLoading}
+                >
+                  {organizationLoading ? 'Suggesting…' : 'Suggest organization'}
+                </button>
+              </div>
+            )}
             {results.map((file) => (
               <article className="search-result-card" key={file.fullPath}>
+                <label className="search-result-selection">
+                  <input
+                    type="checkbox"
+                    checked={selectedResultPaths.includes(file.fullPath)}
+                    onChange={() => toggleResultSelection(file.fullPath)}
+                    aria-label={`Select ${file.filename} for organization suggestions`}
+                  />
+                </label>
                 <div className="search-result-heading">
                   <SearchResultPreview
                     file={file}
@@ -367,6 +491,32 @@ function SearchPage({
                     </p>
                   </div>
                 )}
+                <button
+                  type="button"
+                  className="organization-suggest-single"
+                  onClick={() => requestOrganizationSuggestions([file.fullPath])}
+                  disabled={organizationLoading}
+                >
+                  Suggest organization
+                </button>
+                {organizationSuggestions.filter((suggestion) => suggestion.file.fullPath === file.fullPath).map((suggestion) => (
+                  <section className="organization-suggestion" key={suggestion.file.fullPath} aria-label="Organization suggestion">
+                    <h3>Organization suggestion</h3>
+                    <p><strong>Suggested location:</strong> {suggestion.category} / {suggestion.subcategory}</p>
+                    <p><strong>Reason:</strong> “{suggestion.reason}”</p>
+                    {suggestion.aiUnavailable && <p className="organization-local-note">AI is unavailable. This suggestion uses local file metadata.</p>}
+                    <div>
+                      <button type="button" onClick={() => reviewSuggestion(suggestion)}>Review</button>
+                      <button
+                        type="button"
+                        className="organization-dismiss"
+                        onClick={() => setOrganizationSuggestions((current) => current.filter((item) => item.file.fullPath !== suggestion.file.fullPath))}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </section>
+                ))}
                 <div className="search-result-actions">
                   <button type="button" onClick={() => runFileAction('openFile', file, 'File opened.')}>Open File</button>
                   <button type="button" onClick={() => runFileAction('openFolder', file, 'Folder opened.')}>Open Folder</button>
@@ -386,6 +536,60 @@ function SearchPage({
             runFileAction('openFile', file, 'File opened.')
           }}
         />
+      )}
+      {reviewingSuggestion && (
+        <div className="organization-review-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) {
+            setReviewingSuggestion(null)
+            setConfirmingMove(false)
+          }
+        }}>
+          <section className="organization-review-modal" role="dialog" aria-modal="true" aria-labelledby="organization-review-title">
+            <h2 id="organization-review-title">Review organization suggestion</h2>
+            <dl>
+              <dt>File</dt><dd>{reviewingSuggestion.file.filename}</dd>
+              <dt>Current location</dt><dd>{reviewingSuggestion.file.parentFolder}</dd>
+              <dt>Destination folder</dt>
+              <dd>
+                <label>
+                  <span className="visually-hidden">Choose destination folder</span>
+                  <select value={reviewDestinationRoot} onChange={(event) => {
+                    setReviewDestinationRoot(event.target.value)
+                    setOrganizationMoveError('')
+                  }}>
+                    {destinationFolders.map((folder) => <option key={folder.path} value={folder.path}>{folder.name}</option>)}
+                  </select>
+                </label>
+              </dd>
+              <dt>Suggested location</dt>
+              <dd>{suggestedFolderName} / {reviewingSuggestion.category} / {reviewingSuggestion.subcategory}</dd>
+            </dl>
+            {confirmingMove && (
+              <>
+                <p className="organization-move-confirmation">
+                  Confirm moving this file? The filename will stay the same.
+                </p>
+                {organizationMoveError && <p className="organization-move-error" role="alert">{organizationMoveError}</p>}
+              </>
+            )}
+            <div className="organization-review-actions">
+              {!confirmingMove ? (
+                <button type="button" onClick={() => setConfirmingMove(true)} disabled={!reviewDestinationRoot}>Move file</button>
+              ) : (
+                <>
+                  <button type="button" onClick={confirmOrganizationMove} disabled={organizationLoading}>
+                    {organizationLoading ? 'Moving…' : 'Confirm move'}
+                  </button>
+                  <button type="button" onClick={() => setConfirmingMove(false)} disabled={organizationLoading}>Back</button>
+                </>
+              )}
+              <button type="button" className="organization-dismiss" onClick={() => {
+                setReviewingSuggestion(null)
+                setConfirmingMove(false)
+              }} disabled={organizationLoading}>Cancel</button>
+            </div>
+          </section>
+        </div>
       )}
     </div>
   )

@@ -11,12 +11,15 @@ import {
   removeIndexedFolder,
   clearAllIndex,
   closeDatabase,
+  getFileOrganizationData,
 } from './services/database.js'
 import { indexFolders } from './services/fileIndexer.js'
 import { getIndexedFile, getSearchOptions, searchFiles } from './services/fileSearch.js'
 import { createFilePreviewService } from './services/filePreview.js'
 import { understandQuery } from './services/queryUnderstanding.js'
 import { createOpenAiProvider } from './services/aiProvider.js'
+import { createOrganizationSuggestionService } from './services/organizationSuggestions.js'
+import { moveIndexedFile, undoIndexedFileMove } from './services/fileOrganization.js'
 import { analyzeSelectedFiles, getUnderstandingStatus } from './services/fileUnderstanding.js'
 import {
   copyIndexedPath,
@@ -34,7 +37,9 @@ let mainWindow = null
 let indexingInProgress = false
 let cancelIndexing = false
 let aiAnalysisInProgress = false
+let fileMoveInProgress = false
 const searchIntentCache = new Map()
+const pendingMoveUndos = new Map()
 
 function getSettingsPath() {
   return path.join(app.getPath('userData'), SETTINGS_FILE)
@@ -147,7 +152,7 @@ async function runIndexForFolders(folders) {
     return { ok: true, results: [] }
   }
 
-  if (indexingInProgress || aiAnalysisInProgress) {
+  if (indexingInProgress || aiAnalysisInProgress || fileMoveInProgress) {
     return { ok: false, error: 'Wait for indexing or AI analysis to finish.' }
   }
 
@@ -326,7 +331,7 @@ ipcMain.handle('folders:select', async () => {
 })
 
 ipcMain.handle('folders:remove', async (_event, folderPath) => {
-  if (aiAnalysisInProgress) throw new Error('Wait for AI analysis to finish before removing a folder.')
+  if (aiAnalysisInProgress || fileMoveInProgress) throw new Error('Wait for the current file operation to finish before removing a folder.')
   if (!folderPath || typeof folderPath !== 'string') {
     throw new Error('Invalid folder path')
   }
@@ -381,7 +386,7 @@ ipcMain.handle('index:reindex', async (_event, folderPath) => {
 })
 
 ipcMain.handle('index:clear', () => {
-  if (aiAnalysisInProgress) return { ok: false, error: 'Wait for AI analysis to finish before clearing the index.' }
+  if (aiAnalysisInProgress || fileMoveInProgress) return { ok: false, error: 'Wait for the current file operation to finish before clearing the index.' }
   clearAllIndex()
   return {
     ok: true,
@@ -461,10 +466,58 @@ ipcMain.handle('file:preview', async (_event, fullPath, requestedSize) => {
   })
 })
 
+ipcMain.handle('organization:suggest', async (_event, fullPaths) => {
+  if (!Array.isArray(fullPaths)) return { results: [] }
+  const service = createOrganizationSuggestionService({
+    getOrganizationData: getFileOrganizationData,
+    provider: createOpenAiProvider(),
+  })
+  return { results: await service.suggestForFiles(fullPaths.slice(0, 50), loadSelectedFolders()) }
+})
+
+ipcMain.handle('organization:move', async (_event, fullPath, destinationRootPath, categoryPath) => {
+  if (indexingInProgress || aiAnalysisInProgress || fileMoveInProgress) {
+    return { ok: false, error: 'Wait for the current file operation to finish before moving a file.' }
+  }
+  const selectedFolders = loadSelectedFolders()
+  fileMoveInProgress = true
+  try {
+    const result = await moveIndexedFile({ fullPath, destinationRootPath, categoryPath, selectedFolders })
+    if (!result.ok) return result
+    const undoToken = randomUUID()
+    pendingMoveUndos.set(undoToken, {
+      sourcePath: result.file.fullPath,
+      destinationPath: result.undo.previousPath,
+      destinationRootPath: result.undo.previousRootPath,
+    })
+    if (pendingMoveUndos.size > 20) pendingMoveUndos.delete(pendingMoveUndos.keys().next().value)
+    return { ok: true, file: result.file, undoToken }
+  } finally {
+    fileMoveInProgress = false
+  }
+})
+
+ipcMain.handle('organization:undo', async (_event, undoToken) => {
+  if (typeof undoToken !== 'string') return { ok: false, error: 'This undo action is no longer available.' }
+  const undo = pendingMoveUndos.get(undoToken)
+  if (!undo) return { ok: false, error: 'This undo action is no longer available.' }
+  if (indexingInProgress || aiAnalysisInProgress || fileMoveInProgress) {
+    return { ok: false, error: 'Wait for the current file operation to finish before undoing the move.' }
+  }
+  fileMoveInProgress = true
+  try {
+    const result = await undoIndexedFileMove({ ...undo, selectedFolders: loadSelectedFolders() })
+    if (result.ok) pendingMoveUndos.delete(undoToken)
+    return result
+  } finally {
+    fileMoveInProgress = false
+  }
+})
+
 ipcMain.handle('ai:getStatus', () => getUnderstandingStatus(loadSelectedFolders()))
 
 ipcMain.handle('ai:analyze', async () => {
-  if (indexingInProgress || aiAnalysisInProgress) {
+  if (indexingInProgress || aiAnalysisInProgress || fileMoveInProgress) {
     return { ok: false, message: 'Wait for the current indexing or analysis to finish.' }
   }
   const selectedFolders = loadSelectedFolders()

@@ -15,6 +15,10 @@ contextBridge.exposeInMainWorld('fileFinder', {
   openFolder: (fullPath) => ipcRenderer.invoke('file:openFolder', fullPath),
   copyPath: (fullPath) => ipcRenderer.invoke('file:copyPath', fullPath),
   getFilePreview: (fullPath, size) => ipcRenderer.invoke('file:preview', fullPath, size),
+  suggestOrganization: (fullPaths) => ipcRenderer.invoke('organization:suggest', fullPaths),
+  moveOrganizedFile: (fullPath, destinationRootPath, categoryPath) =>
+    ipcRenderer.invoke('organization:move', fullPath, destinationRootPath, categoryPath),
+  undoOrganizedMove: (undoToken) => ipcRenderer.invoke('organization:undo', undoToken),
 
   getAiStatus: () => ipcRenderer.invoke('ai:getStatus'),
   analyzeFilesWithAi: () => ipcRenderer.invoke('ai:analyze'),
