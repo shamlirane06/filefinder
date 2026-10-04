@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('fileFinder', {
   openFile: (fullPath) => ipcRenderer.invoke('file:open', fullPath),
   openFolder: (fullPath) => ipcRenderer.invoke('file:openFolder', fullPath),
   copyPath: (fullPath) => ipcRenderer.invoke('file:copyPath', fullPath),
+  getFilePreview: (fullPath, size) => ipcRenderer.invoke('file:preview', fullPath, size),
 
   getAiStatus: () => ipcRenderer.invoke('ai:getStatus'),
   analyzeFilesWithAi: () => ipcRenderer.invoke('ai:analyze'),

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import SearchBar from '../components/SearchBar'
+import PreviewModal from '../components/PreviewModal'
 import './SearchPage.css'
 
 const api = typeof window !== 'undefined' ? window.fileFinder : null
@@ -25,6 +26,54 @@ function formatDate(value) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(date)
+}
+
+const PREVIEW_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf'])
+
+function SearchResultPreview({ file, onUnavailable, onOpenPreview }) {
+  const previewKey = `${file.fullPath}:${file.size}:${file.modifiedAt}`
+  const [preview, setPreview] = useState({ key: previewKey, status: 'loading' })
+
+  useEffect(() => {
+    if (!PREVIEW_EXTENSIONS.has(file.extension?.toLowerCase()) || !api?.getFilePreview) return
+    let cancelled = false
+    api.getFilePreview(file.fullPath, 'thumbnail').then((result) => {
+      if (cancelled) return
+      setPreview(result?.status === 'ready' && result.dataUrl
+        ? { key: previewKey, status: 'ready', dataUrl: result.dataUrl }
+        : { key: previewKey, status: result?.status === 'unavailable' ? 'unavailable' : 'failed' })
+      if (result?.status === 'unavailable') onUnavailable(file.rootFolder)
+    }).catch(() => {
+      if (!cancelled) setPreview({ key: previewKey, status: 'failed' })
+    })
+    return () => { cancelled = true }
+  }, [file.fullPath, file.extension, file.rootFolder, file.size, file.modifiedAt, onUnavailable, previewKey])
+
+  const currentPreview = preview.key === previewKey
+    ? preview
+    : { status: PREVIEW_EXTENSIONS.has(file.extension?.toLowerCase()) ? 'loading' : 'unsupported' }
+
+  if (currentPreview.status === 'ready') {
+    return (
+      <button
+        type="button"
+        className="search-result-preview-button"
+        aria-label={`Open preview of ${file.filename}`}
+        onClick={() => onOpenPreview({ ...file, preview: currentPreview.dataUrl })}
+      >
+        <img src={currentPreview.dataUrl} alt={`Preview of ${file.filename}`} />
+      </button>
+    )
+  }
+  if (currentPreview.status === 'unavailable') {
+    return <div className="search-result-preview-placeholder is-unavailable" role="status">File unavailable</div>
+  }
+  return (
+    <div className="search-result-preview-placeholder" aria-label={preview.status === 'loading' ? 'Loading preview' : 'Preview unavailable'}>
+      <span>{file.extension ? file.extension.replace('.', '').slice(0, 4).toUpperCase() : 'FILE'}</span>
+      {currentPreview.status !== 'loading' && <small>Preview unavailable</small>}
+    </div>
+  )
 }
 
 function SearchPage({
@@ -53,6 +102,7 @@ function SearchPage({
   const [actionMessage, setActionMessage] = useState('')
   const [aiSearchNotice, setAiSearchNotice] = useState('')
   const [unavailableFolder, setUnavailableFolder] = useState('')
+  const [previewingFile, setPreviewingFile] = useState(null)
 
   const indexedFolders = folders.filter((folder) => Number(folder.fileCount) > 0)
   const hasIndexedFolders = indexedFolders.length > 0
@@ -143,6 +193,24 @@ function SearchPage({
       setUnavailableFolder(result?.unavailable ? file.rootFolder : '')
     } catch {
       setActionMessage('The file action failed. Please try again.')
+    }
+  }
+
+  async function openLargePreview(file) {
+    setPreviewingFile(file)
+    if (!api?.getFilePreview) return
+    try {
+      const result = await api.getFilePreview(file.fullPath, 'large')
+      if (result?.status === 'ready' && result.dataUrl) {
+        setPreviewingFile((current) => current?.fullPath === file.fullPath
+          ? { ...current, preview: result.dataUrl }
+          : current)
+      } else if (result?.status === 'unavailable') {
+        setPreviewingFile((current) => current?.fullPath === file.fullPath ? null : current)
+        setUnavailableFolder(file.rootFolder)
+      }
+    } catch {
+      // Keep the bounded thumbnail already displayed in the preview modal.
     }
   }
 
@@ -278,9 +346,11 @@ function SearchPage({
             {results.map((file) => (
               <article className="search-result-card" key={file.fullPath}>
                 <div className="search-result-heading">
-                  <div className="search-file-icon" aria-hidden="true">
-                    {file.extension ? file.extension.replace('.', '').slice(0, 4).toUpperCase() : 'FILE'}
-                  </div>
+                  <SearchResultPreview
+                    file={file}
+                    onUnavailable={setUnavailableFolder}
+                    onOpenPreview={openLargePreview}
+                  />
                   <div className="search-file-title">
                     <h2>{file.filename}</h2>
                     <p>{file.fileType || 'File'} · {formatSize(file.size)} · Modified {formatDate(file.modifiedAt)}</p>
@@ -306,6 +376,16 @@ function SearchPage({
             ))}
           </div>
         </>
+      )}
+      {previewingFile && (
+        <PreviewModal
+          file={previewingFile}
+          onClose={() => setPreviewingFile(null)}
+          onOpenFile={(file) => {
+            setPreviewingFile(null)
+            runFileAction('openFile', file, 'File opened.')
+          }}
+        />
       )}
     </div>
   )

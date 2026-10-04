@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, nativeImage } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { randomUUID } from 'crypto'
@@ -13,7 +13,8 @@ import {
   closeDatabase,
 } from './services/database.js'
 import { indexFolders } from './services/fileIndexer.js'
-import { getSearchOptions, searchFiles } from './services/fileSearch.js'
+import { getIndexedFile, getSearchOptions, searchFiles } from './services/fileSearch.js'
+import { createFilePreviewService } from './services/filePreview.js'
 import { understandQuery } from './services/queryUnderstanding.js'
 import { createOpenAiProvider } from './services/aiProvider.js'
 import { analyzeSelectedFiles, getUnderstandingStatus } from './services/fileUnderstanding.js'
@@ -443,6 +444,21 @@ ipcMain.handle('file:openFolder', (_event, fullPath) => {
 
 ipcMain.handle('file:copyPath', (_event, fullPath) => {
   return copyIndexedPath(fullPath, loadSelectedFolders())
+})
+
+const filePreviewService = createFilePreviewService({
+  thumbnailFromPath: (filePath, size) => nativeImage.createThumbnailFromPath(filePath, size),
+  cacheDirectory: path.join(app.getPath('userData'), 'preview-cache'),
+})
+
+ipcMain.handle('file:preview', async (_event, fullPath, requestedSize) => {
+  if (typeof fullPath !== 'string' || fullPath.length > 32768) return { status: 'unavailable' }
+  const indexedFile = getIndexedFile(fullPath, loadSelectedFolders())
+  if (!indexedFile) return { status: 'unavailable' }
+  return filePreviewService.getPreview({
+    filePath: indexedFile.fullPath,
+    size: requestedSize === 'large' ? 'large' : 'thumbnail',
+  })
 })
 
 ipcMain.handle('ai:getStatus', () => getUnderstandingStatus(loadSelectedFolders()))
