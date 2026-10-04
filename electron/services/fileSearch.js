@@ -116,6 +116,7 @@ function isIsoDate(value) {
 }
 
 function getOrder(sort) {
+  if (sort === 'largest') return 'f.size DESC, f.filename COLLATE NOCASE ASC'
   if (sort === 'newest') return 'f.modified_at DESC, f.filename COLLATE NOCASE ASC'
   if (sort === 'oldest') return 'f.modified_at ASC, f.filename COLLATE NOCASE ASC'
   if (sort === 'name') return 'f.filename COLLATE NOCASE ASC, f.full_path COLLATE NOCASE ASC'
@@ -181,6 +182,8 @@ export function searchFiles(options = {}, selectedFolders = []) {
     fileTypes: Array.isArray(options.fileTypes) ? options.fileTypes : [],
     dateFrom: options.dateFrom,
     dateTo: options.dateTo,
+    matchAll: options.matchAll === true,
+    limit: Number.isInteger(options.limit) ? Math.max(1, Math.min(options.limit, 1000)) : null,
   }
   const where = buildSearchWhere(normalizedOptions, roots)
   const hasFilter = Boolean(
@@ -190,6 +193,7 @@ export function searchFiles(options = {}, selectedFolders = []) {
     || normalizedOptions.fileTypes.length
     || isIsoDate(normalizedOptions.dateFrom)
     || isIsoDate(normalizedOptions.dateTo)
+    || normalizedOptions.matchAll
   )
   if (!where.keyword && !hasFilter) return { results: [], total: 0 }
 
@@ -229,7 +233,8 @@ export function searchFiles(options = {}, selectedFolders = []) {
     LEFT JOIN ai_file_metadata m ON m.file_id = f.id AND m.status = 'completed'
     WHERE ${where.sql}
     ORDER BY ${order}
-  `, [...relevance.values, ...where.values])
+    ${normalizedOptions.limit ? 'LIMIT ?' : ''}
+  `, [...relevance.values, ...where.values, ...(normalizedOptions.limit ? [normalizedOptions.limit] : [])])
   const results = scoredRows.map((row) => {
     const metadataText = [row.documentType, row.aiTitle, row.aiDescription, row.extractedText,
       row.aiKeywords, row.aiEntities, row.aiCategory].filter(Boolean).join(' ').toLowerCase()

@@ -34,6 +34,47 @@ function analysisPrompt(filename, kind) {
 }
 
 export function createOpenAiProvider({ config = getAiProviderConfig(), fetchImpl = fetch } = {}) {
+  async function answerFileQuestion({ question, candidates }) {
+    if (!config.apiKey) throw new Error('AI file assistant is not configured.')
+    const boundedCandidates = (Array.isArray(candidates) ? candidates : []).slice(0, 8).map((candidate) => ({
+      sourceId: candidate.sourceId,
+      filename: String(candidate.filename || '').slice(0, 240),
+      extension: String(candidate.extension || '').slice(0, 20),
+      location: String(candidate.location || '').slice(0, 300),
+      fileType: String(candidate.fileType || '').slice(0, 80),
+      size: Number.isFinite(candidate.size) ? candidate.size : null,
+      modifiedAt: String(candidate.modifiedAt || '').slice(0, 40),
+      documentType: String(candidate.documentType || '').slice(0, 120),
+      title: String(candidate.title || '').slice(0, 240),
+      description: String(candidate.description || '').slice(0, 600),
+      keywords: Array.isArray(candidate.keywords) ? candidate.keywords.slice(0, 20).map((item) => String(item).slice(0, 80)) : [],
+      extractedText: String(candidate.extractedText || '').slice(0, 1600),
+    }))
+    const prompt = `Answer the user's question using only the candidate file records below. Do not guess, infer personal facts, or claim facts absent from the records. If the records do not answer the question, use an empty answer. Cite only sourceId values provided below. Return JSON exactly as {"answer":"...","sourceIds":[number]}. Keep the answer concise. Question: ${JSON.stringify(String(question || '').slice(0, 600))}\nCandidate records: ${JSON.stringify(boundedCandidates)}`
+    let response
+    try {
+      response = await fetchImpl(config.endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(7000),
+        body: JSON.stringify({
+          model: config.model,
+          store: false,
+          max_output_tokens: 500,
+          input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }] }],
+          text: { format: { type: 'json_object' } },
+        }),
+      })
+    } catch {
+      throw new Error('The assistant could not reach the AI provider.')
+    }
+    if (!response.ok) throw new Error(`The AI provider returned HTTP ${response.status}.`)
+    return parseOutput(await response.json())
+  }
+
   async function suggestOrganization(metadata) {
     if (!config.apiKey) throw new Error('AI organization suggestions are not configured.')
     const prompt = `Suggest a folder category for this file using only the supplied metadata. Return JSON exactly as {"category":"...","subcategory":"...","reason":"..."}. Use short folder names without slashes in either category field and a concise reason. Do not suggest moving or renaming the file. Metadata: ${JSON.stringify({
@@ -158,6 +199,7 @@ export function createOpenAiProvider({ config = getAiProviderConfig(), fetchImpl
 
   return {
     config: { configured: Boolean(config.apiKey), provider: config.provider, model: config.model },
+    answerFileQuestion,
     suggestOrganization,
     interpretQuery,
     analyzeImage: (input) => analyze({ ...input, kind: 'image' }),

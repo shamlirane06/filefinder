@@ -255,7 +255,7 @@ export function getFileOrganizationData(fullPath, selectedFolders = []) {
   if (!roots.length || typeof fullPath !== 'string' || !fullPath.trim()) return null
   const row = queryRows(`
     SELECT f.id, f.filename, f.full_path AS fullPath, f.extension, f.file_type AS fileType,
-      f.size, f.modified_at AS modifiedAt, f.parent_folder AS parentFolder,
+      f.size, f.created_at AS createdAt, f.modified_at AS modifiedAt, f.parent_folder AS parentFolder,
       f.root_folder AS rootFolder, m.document_type AS documentType, m.title,
       m.description, m.keywords, m.extracted_text AS extractedText, m.status AS aiStatus
     FROM files f LEFT JOIN ai_file_metadata m ON m.file_id = f.id

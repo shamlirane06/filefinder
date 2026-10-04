@@ -2,6 +2,8 @@ const STOP_WORDS = new Set([
   'find', 'show', 'search', 'look', 'locate', 'get', 'please', 'me', 'my', 'the',
   'a', 'an', 'for', 'about', 'of', 'in', 'from', 'with', 'to', 'on', 'is', 'are',
   'document', 'documents', 'file', 'files', 'last', 'past', 'this', 'modified', 'updated',
+  'what', 'which', 'where', 'how', 'many', 'do', 'does', 'did', 'i', 'we', 'have',
+  'one', 'other', 'all', 'newest', 'latest', 'oldest', 'largest', 'biggest', 'smallest', 'were', 'been',
 ])
 
 const TYPE_TERMS = new Map([
@@ -16,7 +18,7 @@ const TYPE_TERMS = new Map([
 ])
 
 const DOCUMENT_TYPES = ['PDF', 'Word Document', 'Text', 'Markdown', 'PowerPoint', 'Excel', 'CSV', 'Rich Text']
-const DATE_TERMS = new Set(['recently', 'today', 'yesterday', 'week', 'month', 'year', 'september', 'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'october', 'november', 'december'])
+const DATE_TERMS = new Set(['recent', 'recently', 'today', 'yesterday', 'week', 'month', 'year', 'september', 'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'october', 'november', 'december'])
 
 function words(value) {
   return String(value || '').toLowerCase().split(/[^\p{L}\p{N}.]+/u).filter(Boolean)

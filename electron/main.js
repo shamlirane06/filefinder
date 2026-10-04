@@ -20,6 +20,7 @@ import { understandQuery } from './services/queryUnderstanding.js'
 import { createOpenAiProvider } from './services/aiProvider.js'
 import { createOrganizationSuggestionService } from './services/organizationSuggestions.js'
 import { moveIndexedFile, undoIndexedFileMove } from './services/fileOrganization.js'
+import { createFileAssistantService } from './services/fileAssistant.js'
 import { analyzeSelectedFiles, getUnderstandingStatus } from './services/fileUnderstanding.js'
 import {
   copyIndexedPath,
@@ -40,6 +41,7 @@ let aiAnalysisInProgress = false
 let fileMoveInProgress = false
 const searchIntentCache = new Map()
 const pendingMoveUndos = new Map()
+const assistantSessions = new Map()
 
 function getSettingsPath() {
   return path.join(app.getPath('userData'), SETTINGS_FILE)
@@ -427,6 +429,9 @@ ipcMain.handle('search:query', async (_event, options = {}) => {
     dateModified: manualDateFilter ? options.dateModified : intent.dateModified || options.dateModified,
     dateFrom: manualDateFilter ? undefined : intent.dateFrom,
     dateTo: manualDateFilter ? undefined : intent.dateTo,
+    // These are internal assistant-only controls; never accept them from renderer IPC.
+    matchAll: false,
+    limit: undefined,
   }
   const response = searchFiles(searchOptions, selectedFolders)
   const aiStatus = getUnderstandingStatus(selectedFolders)
@@ -512,6 +517,35 @@ ipcMain.handle('organization:undo', async (_event, undoToken) => {
   } finally {
     fileMoveInProgress = false
   }
+})
+
+ipcMain.handle('assistant:ask', async (_event, question, conversationId) => {
+  const selectedFolders = loadSelectedFolders()
+  const now = Date.now()
+  for (const [token, session] of assistantSessions) {
+    if (session.expiresAt <= now) assistantSessions.delete(token)
+  }
+  const sessionExists = typeof conversationId === 'string' && assistantSessions.has(conversationId)
+  const sessionId = sessionExists ? conversationId : randomUUID()
+  const contextPaths = sessionExists ? assistantSessions.get(sessionId).contextPaths : []
+  let response
+  try {
+    const service = createFileAssistantService({ provider: createOpenAiProvider() })
+    response = await service.answerQuestion({ question, selectedFolders, contextPaths })
+  } catch {
+    response = {
+      answer: 'I could not search your indexed files just now. Please try again.',
+      files: [],
+      contextPaths: [],
+      aiUnavailable: false,
+    }
+  }
+  assistantSessions.set(sessionId, {
+    contextPaths: Array.isArray(response.contextPaths) ? response.contextPaths.slice(0, 30) : [],
+    expiresAt: now + 30 * 60 * 1000,
+  })
+  if (assistantSessions.size > 100) assistantSessions.delete(assistantSessions.keys().next().value)
+  return { ...response, conversationId: sessionId }
 })
 
 ipcMain.handle('ai:getStatus', () => getUnderstandingStatus(loadSelectedFolders()))

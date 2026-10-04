@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('fileFinder', {
   moveOrganizedFile: (fullPath, destinationRootPath, categoryPath) =>
     ipcRenderer.invoke('organization:move', fullPath, destinationRootPath, categoryPath),
   undoOrganizedMove: (undoToken) => ipcRenderer.invoke('organization:undo', undoToken),
+  askAssistant: (question, conversationId) => ipcRenderer.invoke('assistant:ask', question, conversationId),
 
   getAiStatus: () => ipcRenderer.invoke('ai:getStatus'),
   analyzeFilesWithAi: () => ipcRenderer.invoke('ai:analyze'),

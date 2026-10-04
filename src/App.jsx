@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Sidebar from './components/Sidebar'
 import HomePage from './pages/HomePage'
 import SearchPage from './pages/SearchPage'
+import AssistantPage from './pages/AssistantPage'
 import OrganizePage from './pages/OrganizePage'
 import SettingsPage from './pages/SettingsPage'
 import { useFolders } from './hooks/useFolders'
@@ -10,6 +11,7 @@ import './App.css'
 const PAGES = {
   home: HomePage,
   search: SearchPage,
+  assistant: AssistantPage,
   organize: OrganizePage,
   settings: SettingsPage,
 }
