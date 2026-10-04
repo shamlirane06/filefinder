@@ -13,6 +13,7 @@ import {
 import { indexFolder } from '../services/fileIndexer.js'
 import { getIndexedFile, searchFiles } from '../services/fileSearch.js'
 import { analyzeSelectedFiles, getUnderstandingStatus } from '../services/fileUnderstanding.js'
+import { createOpenAiProvider } from '../services/aiProvider.js'
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'filefinder-ai-'))
 const profilePath = path.join(tempRoot, 'profile')
@@ -86,13 +87,15 @@ app.whenReady().then(async () => {
     const firstSearch = searchFiles({ query: 'Find my graduation certificate' }, [selectedPath])
     const legacySearch = searchFiles({ query: 'certificate_final.pdf' }, [selectedPath])
     const callsAfterFirst = calls.length
+    await indexFolder({ name: 'selected', path: selectedPath })
     const second = await analyzeSelectedFiles([selectedPath], { provider: mockProvider })
     const skippedUnchanged = second.skipped === 3 && calls.length === callsAfterFirst + 1
 
     writeFile(imagePath, 'image-content-v2-changed')
     const oldFingerprint = imageMetadata.fingerprint
     await analyzeSelectedFiles([selectedPath], { provider: mockProvider })
-    const updatedMetadata = getAiMetadata(imageId)
+    const reindexedImageId = db.exec('SELECT id FROM files WHERE full_path = ?', [imagePath])[0].values[0][0]
+    const updatedMetadata = getAiMetadata(reindexedImageId)
     const changedWasReprocessed = updatedMetadata.fingerprint !== oldFingerprint
 
     const checks = [
@@ -111,6 +114,24 @@ app.whenReady().then(async () => {
       progress.some((item) => item.status === 'processing' && item.total === 4),
       getIndexedFile(imagePath, [selectedPath])?.fullPath === imagePath,
     ]
+    const providerRequests = []
+    const httpMock = createOpenAiProvider({
+      config: { configured: true, apiKey: 'test-secret', endpoint: 'https://example.test/responses', model: 'mock-model', provider: 'mock' },
+      fetchImpl: async (url, request) => {
+        providerRequests.push({ url, request: JSON.parse(request.body), authorization: request.headers.Authorization })
+        return {
+          ok: true,
+          json: async () => ({ output_text: JSON.stringify({ documentType: 'test', title: '', keywords: [], description: '', extractedText: '', entities: [], category: '' }) }),
+        }
+      },
+    })
+    const providerImage = await httpMock.analyzeImage({ filename: 'sample.jpg', bytes: Buffer.from('img'), mimeType: 'image/jpeg' })
+    await httpMock.analyzeDocument({ filename: 'sample.pdf', bytes: Buffer.from('pdf') })
+    checks.push(providerImage.documentType === 'test')
+    checks.push(providerRequests.length === 2 && providerRequests.every((item) => item.request.store === false))
+    checks.push(providerRequests[0].request.input[0].content.some((item) => item.type === 'input_image'))
+    checks.push(providerRequests[1].request.input[0].content.some((item) => item.type === 'input_file'))
+    checks.push(providerRequests.every((item) => item.authorization === 'Bearer test-secret'))
     passed = checks.every(Boolean)
     console.log(JSON.stringify({ passed, checks: checks.length, results: checks, first, skippedUnchanged, changedWasReprocessed }, null, 2))
   } catch (error) {

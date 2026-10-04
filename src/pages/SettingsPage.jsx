@@ -147,7 +147,8 @@ function SettingsPage({
         </p>
         <p className="settings-ai-privacy">
           Starting analysis sends each supported file to the configured AI provider. Analysis is opt-in;
-          file index and generated metadata remain local. Do not analyze files you do not want to share.
+          file index and generated metadata remain local. The provider's data-handling and retention rules apply to submitted content.
+          Do not analyze files you do not want to share.
         </p>
         <p className="settings-ai-status">
           {aiStatus ? `${aiStatus.supportedFiles.toLocaleString()} supported files · ${aiStatus.analyzed.toLocaleString()} analyzed · ${aiStatus.remaining.toLocaleString()} remaining` : 'Loading AI status…'}

@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url)
 
 let db = null
 let dbPath = null
+const preservedAiMetadata = new Map()
 
 function getDbPath() {
   return path.join(app.getPath('userData'), 'filefinder-index.sqlite')
@@ -348,6 +349,11 @@ export function setFolderStatus(folderPath, status) {
 
 export function removeIndexedFolder(folderPath) {
   const database = getDatabase()
+  for (const [fullPath, metadata] of preservedAiMetadata) {
+    if (String(metadata.rootFolder || '').toLowerCase() === String(folderPath).toLowerCase()) {
+      preservedAiMetadata.delete(fullPath)
+    }
+  }
   database.run(`DELETE FROM files WHERE root_folder = ? COLLATE NOCASE`, [folderPath])
   database.run(`DELETE FROM indexed_folders WHERE path = ? COLLATE NOCASE`, [folderPath])
   persist()
@@ -355,6 +361,16 @@ export function removeIndexedFolder(folderPath) {
 
 export function clearFilesForFolder(folderPath) {
   const database = getDatabase()
+  const existingMetadata = queryRows(`
+    SELECT f.full_path AS fullPath, f.root_folder AS rootFolder,
+      m.fingerprint, m.document_type AS documentType, m.title, m.description,
+      m.extracted_text AS extractedText, m.keywords, m.entities, m.category,
+      m.status, m.ai_processed AS aiProcessed, m.processed_at AS processedAt,
+      m.model, m.processing_error AS processingError
+    FROM files f JOIN ai_file_metadata m ON m.file_id = f.id
+    WHERE f.root_folder = ? COLLATE NOCASE
+  `, [folderPath])
+  for (const metadata of existingMetadata) preservedAiMetadata.set(metadata.fullPath, metadata)
   database.run(`DELETE FROM files WHERE root_folder = ? COLLATE NOCASE`, [folderPath])
   persist()
 }
@@ -405,6 +421,26 @@ export function insertFiles(files, { persistAfter = true } = {}) {
     `)
     for (const file of files) pendingAi.run([file.fullPath])
     pendingAi.free()
+
+    const restore = database.prepare(`
+      INSERT OR REPLACE INTO ai_file_metadata (
+        file_id, fingerprint, document_type, title, description, extracted_text,
+        keywords, entities, category, status, ai_processed, processed_at, model, processing_error
+      ) SELECT id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        FROM files WHERE full_path = ? COLLATE NOCASE
+    `)
+    for (const file of files) {
+      const previous = preservedAiMetadata.get(file.fullPath)
+      if (!previous) continue
+      restore.run([
+        previous.fingerprint, previous.documentType, previous.title, previous.description,
+        previous.extractedText, previous.keywords, previous.entities, previous.category,
+        previous.status, previous.aiProcessed, previous.processedAt, previous.model,
+        previous.processingError, file.fullPath,
+      ])
+      preservedAiMetadata.delete(file.fullPath)
+    }
+    restore.free()
 
     stmt.free()
     database.run('COMMIT')
@@ -506,6 +542,7 @@ export function getSampleFiles(limit = 20) {
 
 export function clearAllIndex() {
   const database = getDatabase()
+  preservedAiMetadata.clear()
   database.run('DELETE FROM files')
   database.run('DELETE FROM indexed_folders')
   persist()
