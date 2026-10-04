@@ -140,7 +140,7 @@ function SettingsPage({
       </section>
 
       <section className="settings-section">
-        <h2>AI File Understanding</h2>
+        <h2>AI Configuration</h2>
         <p className="settings-desc">
           Analyze supported JPG, JPEG, PNG, WEBP, and PDF files to make their contents searchable.
           Only files in your selected folders are considered. Images are limited to 15 MB and PDFs to 20 MB.
@@ -191,7 +191,7 @@ function SettingsPage({
       </section>
 
       <section className="settings-section">
-        <h2>About</h2>
+        <h2>Application Information</h2>
         <p className="settings-desc">
           FileFinder AI v0.2.0 — Phase 2 indexing. Find, understand, and organize your files.
         </p>

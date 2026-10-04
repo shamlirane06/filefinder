@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('fileFinder', {
   removeFolder: (folderPath) => ipcRenderer.invoke('folders:remove', folderPath),
 
   getIndexStatus: () => ipcRenderer.invoke('index:getStatus'),
+  getDashboardData: () => ipcRenderer.invoke('dashboard:getData'),
   reindex: (folderPath) => ipcRenderer.invoke('index:reindex', folderPath),
   clearIndex: () => ipcRenderer.invoke('index:clear'),
 

@@ -20,7 +20,8 @@
     "test:natural-search": "electron electron/scripts/test-natural-search.js",
     "test:preview": "electron electron/scripts/test-preview.js",
     "test:organization": "electron electron/scripts/test-organization.js",
-    "test:assistant": "electron electron/scripts/test-assistant.js"
+    "test:assistant": "electron electron/scripts/test-assistant.js",
+    "test:dashboard": "electron electron/scripts/test-dashboard.js"
   },
   "dependencies": {
     "react": "^19.2.8",

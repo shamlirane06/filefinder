@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import Sidebar from './components/Sidebar'
 import HomePage from './pages/HomePage'
 import SearchPage from './pages/SearchPage'
@@ -19,6 +19,12 @@ const PAGES = {
 function App() {
   const [activePage, setActivePage] = useState('home')
   const [searchQuery, setSearchQuery] = useState('')
+  const [recentSearches, setRecentSearches] = useState([])
+  const rememberSearch = useCallback((query) => {
+    const value = String(query || '').trim()
+    if (!value) return
+    setRecentSearches((current) => [value, ...current.filter((item) => item.toLocaleLowerCase() !== value.toLocaleLowerCase())].slice(0, 5))
+  }, [])
   const {
     folders,
     loading,
@@ -66,6 +72,8 @@ function App() {
           onNavigate={setActivePage}
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
+          recentSearches={recentSearches}
+          onRememberSearch={rememberSearch}
         />
       </main>
     </div>

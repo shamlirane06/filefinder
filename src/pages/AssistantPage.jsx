@@ -129,8 +129,7 @@ function AssistantPage({ folders, onAddFolder, onReindexFolder, onReindexAll, in
 
       {indexedCount === 0 && (
         <div className="assistant-index-notice" role="status">
-          <strong>No indexed files yet.</strong>
-          <span>Add or re-index a folder to ask questions about its files.</span>
+          <strong>Add and index a folder before asking FileFinder about your files.</strong>
           {desktopAvailable && <button type="button" onClick={onAddFolder} disabled={indexing}>Add Folder</button>}
           {desktopAvailable && folders.length > 0 && <button type="button" onClick={onReindexAll} disabled={indexing}>Re-index folders</button>}
         </div>
@@ -148,7 +147,7 @@ function AssistantPage({ folders, onAddFolder, onReindexFolder, onReindexAll, in
           {messages.length === 0 && (
             <div className="assistant-welcome">
               <div className="assistant-welcome-mark" aria-hidden="true">✦</div>
-              <h2>Ask about your indexed files</h2>
+              <h2>Ask me about your indexed files.</h2>
               <p>I’ll search your local index and show the files that support each answer.</p>
               <div className="assistant-examples">
                 {EXAMPLES.map((example) => (

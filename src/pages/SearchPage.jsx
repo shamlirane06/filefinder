@@ -85,6 +85,7 @@ function SearchPage({
   onReindexFolder,
   searchQuery,
   onSearchQueryChange,
+  onRememberSearch,
 }) {
   const [submittedQuery, setSubmittedQuery] = useState(searchQuery.trim())
   const [hasSubmitted, setHasSubmitted] = useState(Boolean(searchQuery.trim()))
@@ -165,6 +166,7 @@ function SearchPage({
 
   function handleSearch(value) {
     const nextQuery = value.trim()
+    if (nextQuery) onRememberSearch?.(nextQuery)
     setSubmittedQuery(nextQuery)
     setHasSubmitted(true)
     setActionMessage('')
@@ -434,7 +436,7 @@ function SearchPage({
           {!loading && hasSubmitted && (submittedQuery || hasActiveFilter) && resultCount === 0 && !error && (
             <div className="search-empty-state" role="status">
               <h2>No matching files found.</h2>
-              <p>Try a different filename, folder, or keyword.</p>
+              <p>Try another description, a filename, a file type, or another indexed folder.</p>
             </div>
           )}
 

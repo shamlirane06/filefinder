@@ -3,7 +3,7 @@ import './Sidebar.css'
 const NAV_ITEMS = [
   {
     id: 'home',
-    label: 'Home',
+    label: 'Dashboard',
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path
@@ -40,12 +40,7 @@ const NAV_ITEMS = [
     label: 'Organize',
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path
-          d="M3.5 8.5 12 3l8.5 5.5V20a1 1 0 0 1-1 1H4.5a1 1 0 0 1-1-1V8.5Z"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinejoin="round"
-        />
+        <path d="M3.5 8.5 12 3l8.5 5.5V20a1 1 0 0 1-1 1H4.5a1 1 0 0 1-1-1V8.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
         <path d="M9 21V12h6v9" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
       </svg>
     ),
@@ -98,6 +93,7 @@ function Sidebar({ activePage, onNavigate, folderCount, indexing, totalFiles }) 
             key={item.id}
             type="button"
             className={`nav-item${activePage === item.id ? ' active' : ''}`}
+            aria-current={activePage === item.id ? 'page' : undefined}
             onClick={() => onNavigate(item.id)}
           >
             <span className="nav-icon">{item.icon}</span>

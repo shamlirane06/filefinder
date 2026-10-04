@@ -12,6 +12,7 @@ import {
   clearAllIndex,
   closeDatabase,
   getFileOrganizationData,
+  getDashboardData,
 } from './services/database.js'
 import { indexFolders } from './services/fileIndexer.js'
 import { getIndexedFile, getSearchOptions, searchFiles } from './services/fileSearch.js'
@@ -368,6 +369,15 @@ ipcMain.handle('index:getStatus', () => {
     indexing: indexingInProgress,
     ...stats,
     folders: mergeFoldersWithIndex(loadSelectedFolders()),
+  }
+})
+
+ipcMain.handle('dashboard:getData', () => {
+  try {
+    return getDashboardData(loadSelectedFolders())
+  } catch (error) {
+    console.error('Could not load dashboard data:', error)
+    return { error: true, stats: null, recentFiles: [] }
   }
 })
 

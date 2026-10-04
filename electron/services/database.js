@@ -579,6 +579,32 @@ export function getIndexStats() {
   return { totalFiles, totalFolders, totalSize }
 }
 
+export function getDashboardData(selectedFolders = []) {
+  const paths = [...new Set(selectedFolders.map((folder) => folder?.path).filter((value) => typeof value === 'string' && value))]
+  if (!paths.length) return { stats: { totalFiles: 0, images: 0, pdfs: 0, totalFolders: 0 }, recentFiles: [] }
+  const database = getDatabase()
+  const placeholders = paths.map(() => '?').join(', ')
+  const statsRow = database.exec(`
+    SELECT COUNT(*) AS total_files,
+      SUM(CASE WHEN LOWER(extension) IN ('.jpg','.jpeg','.png','.gif','.webp','.bmp','.tif','.tiff','.svg') THEN 1 ELSE 0 END) AS images,
+      SUM(CASE WHEN LOWER(extension) = '.pdf' THEN 1 ELSE 0 END) AS pdfs
+    FROM files WHERE root_folder COLLATE NOCASE IN (${placeholders})
+  `, paths)[0]?.values[0] || [0, 0, 0, 0]
+  const folderCount = database.exec(`SELECT COUNT(*) FROM indexed_folders WHERE path COLLATE NOCASE IN (${placeholders})`, paths)[0]?.values[0]?.[0] || 0
+  const recentFiles = database.exec(`
+    SELECT filename, full_path AS fullPath, extension, file_type AS fileType,
+      size, modified_at AS modifiedAt, parent_folder AS parentFolder, root_folder AS rootFolder
+    FROM files WHERE root_folder COLLATE NOCASE IN (${placeholders})
+      AND modified_at IS NOT NULL
+    ORDER BY modified_at DESC LIMIT 6
+  `, paths)[0]?.values || []
+  const columns = ['filename', 'fullPath', 'extension', 'fileType', 'size', 'modifiedAt', 'parentFolder', 'rootFolder']
+  return {
+    stats: { totalFiles: Number(statsRow[0]) || 0, images: Number(statsRow[1]) || 0, pdfs: Number(statsRow[2]) || 0, totalFolders: Number(folderCount) || 0 },
+    recentFiles: recentFiles.map((row) => Object.fromEntries(columns.map((column, index) => [column, row[index]]))),
+  }
+}
+
 export function getFileCountForFolder(folderPath) {
   const database = getDatabase()
   const stmt = database.prepare(
