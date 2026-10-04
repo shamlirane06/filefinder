@@ -42,6 +42,13 @@
   font-weight: 600;
 }
 
+.search-privacy-note {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .search-hint {
   margin-top: 20px;
   color: var(--text-muted);
@@ -119,6 +126,30 @@
 
 .search-ai-explanation strong {
   color: var(--text-primary);
+}
+
+.search-ai-match {
+  margin: 10px 0 0 54px;
+}
+
+.search-ai-match > span {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.search-ai-match .search-ai-explanation {
+  margin: 6px 0 0;
+}
+
+.search-ai-notice {
+  margin-top: 14px;
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .search-result-actions {
@@ -227,7 +258,8 @@
   }
 
   .search-file-location,
-  .search-result-actions {
+  .search-result-actions,
+  .search-ai-match {
     margin-left: 0;
   }
 }

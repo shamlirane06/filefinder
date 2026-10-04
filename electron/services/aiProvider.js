@@ -34,6 +34,33 @@ function analysisPrompt(filename, kind) {
 }
 
 export function createOpenAiProvider({ config = getAiProviderConfig(), fetchImpl = fetch } = {}) {
+  async function interpretQuery(query) {
+    if (!config.apiKey) throw new Error('AI query understanding is not configured.')
+    const prompt = `Convert the user's file search query into concise JSON with exactly these fields: {"keywords": string[], "fileTypes": string[], "dateFilter": string, "folder": string|null}. Keep useful subject/content words as keywords. fileTypes may contain only PDF, Image, Video, Word Document, Text, Markdown, PowerPoint, Excel, CSV, or Rich Text. dateFilter may be any, today, last_week, last_month, last_year, or YYYY-MM. Use an empty string for no date filter and null for no folder. Do not infer a folder name that the user did not state. Do not answer the request; interpret it only. Query: ${JSON.stringify(String(query).slice(0, 500))}`
+    let response
+    try {
+      response = await fetchImpl(config.endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(5000),
+        body: JSON.stringify({
+          model: config.model,
+          store: false,
+          max_output_tokens: 300,
+          input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }] }],
+          text: { format: { type: 'json_object' } },
+        }),
+      })
+    } catch {
+      throw new Error('AI query understanding request failed or timed out.')
+    }
+    if (!response.ok) throw new Error(`AI query understanding failed (HTTP ${response.status}).`)
+    return parseOutput(await response.json())
+  }
+
   async function analyze({ filename, kind, bytes, mimeType, extractedText }) {
     if (!config.apiKey) throw new Error('AI is not configured. Set FILEFINDER_AI_API_KEY and restart FileFinder AI.')
     const base64 = Buffer.from(bytes).toString('base64')
@@ -95,6 +122,7 @@ export function createOpenAiProvider({ config = getAiProviderConfig(), fetchImpl
 
   return {
     config: { configured: Boolean(config.apiKey), provider: config.provider, model: config.model },
+    interpretQuery,
     analyzeImage: (input) => analyze({ ...input, kind: 'image' }),
     analyzeDocument: (input) => analyze({ ...input, kind: 'document' }),
   }

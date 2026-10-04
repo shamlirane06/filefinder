@@ -16,7 +16,8 @@
     "electron:dev": "concurrently -k \"cross-env BROWSER=none vite\" \"npm run electron:wait\"",
     "test:index": "electron electron/scripts/test-index.js",
     "test:search": "electron electron/scripts/test-search.js",
-    "test:ai": "electron electron/scripts/test-ai.js"
+    "test:ai": "electron electron/scripts/test-ai.js",
+    "test:natural-search": "electron electron/scripts/test-natural-search.js"
   },
   "dependencies": {
     "react": "^19.2.8",

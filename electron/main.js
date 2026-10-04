@@ -14,6 +14,8 @@ import {
 } from './services/database.js'
 import { indexFolders } from './services/fileIndexer.js'
 import { getSearchOptions, searchFiles } from './services/fileSearch.js'
+import { understandQuery } from './services/queryUnderstanding.js'
+import { createOpenAiProvider } from './services/aiProvider.js'
 import { analyzeSelectedFiles, getUnderstandingStatus } from './services/fileUnderstanding.js'
 import {
   copyIndexedPath,
@@ -31,6 +33,7 @@ let mainWindow = null
 let indexingInProgress = false
 let cancelIndexing = false
 let aiAnalysisInProgress = false
+const searchIntentCache = new Map()
 
 function getSettingsPath() {
   return path.join(app.getPath('userData'), SETTINGS_FILE)
@@ -391,8 +394,43 @@ ipcMain.handle('search:options', () => {
   return getSearchOptions(loadSelectedFolders())
 })
 
-ipcMain.handle('search:query', (_event, options) => {
-  return searchFiles(options, loadSelectedFolders())
+ipcMain.handle('search:query', async (_event, options = {}) => {
+  const selectedFolders = loadSelectedFolders()
+  const query = typeof options.query === 'string' ? options.query : ''
+  const cacheKey = `${query.trim().toLocaleLowerCase()}\n${selectedFolders.map((folder) => `${folder.name}:${folder.path}`).join('\n')}`
+  let understanding = searchIntentCache.get(cacheKey)?.expiresAt > Date.now()
+    ? searchIntentCache.get(cacheKey).value
+    : null
+  if (!understanding) {
+    understanding = await understandQuery(query, selectedFolders, { provider: createOpenAiProvider() })
+    if (understanding.naturalLanguage) {
+      searchIntentCache.set(cacheKey, {
+        value: understanding,
+        expiresAt: Date.now() + (understanding.usedAi ? 120000 : 15000),
+      })
+      if (searchIntentCache.size > 100) searchIntentCache.delete(searchIntentCache.keys().next().value)
+    }
+  }
+  const manualDateFilter = options.dateModified && options.dateModified !== 'any'
+  const intent = understanding.intent
+  const searchOptions = {
+    ...options,
+    ...intent,
+    query,
+    folderPath: options.folderPath || intent.folderPath,
+    dateModified: manualDateFilter ? options.dateModified : intent.dateModified || options.dateModified,
+    dateFrom: manualDateFilter ? undefined : intent.dateFrom,
+    dateTo: manualDateFilter ? undefined : intent.dateTo,
+  }
+  const response = searchFiles(searchOptions, selectedFolders)
+  const aiStatus = getUnderstandingStatus(selectedFolders)
+  return {
+    ...response,
+    naturalLanguage: understanding.naturalLanguage,
+    usedAi: understanding.usedAi,
+    aiUnavailable: understanding.aiUnavailable,
+    aiMetadataAvailable: aiStatus.analyzed > 0,
+  }
 })
 
 ipcMain.handle('file:open', (_event, fullPath) => {

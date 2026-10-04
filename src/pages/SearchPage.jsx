@@ -51,6 +51,7 @@ function SearchPage({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
+  const [aiSearchNotice, setAiSearchNotice] = useState('')
   const [unavailableFolder, setUnavailableFolder] = useState('')
 
   const indexedFolders = folders.filter((folder) => Number(folder.fileCount) > 0)
@@ -84,6 +85,11 @@ function SearchPage({
       setError('')
       setResults(Array.isArray(response?.results) ? response.results : [])
       setResultCount(Number(response?.total) || 0)
+      setAiSearchNotice(response?.aiUnavailable && response?.naturalLanguage
+        ? 'AI search is unavailable. Showing standard file search results.'
+        : response?.naturalLanguage && !response?.aiMetadataAvailable
+          ? 'AI file metadata is not available yet. Showing standard file search results.'
+          : '')
     }).catch(() => {
       if (!cancelled) {
         setResults([])
@@ -103,6 +109,7 @@ function SearchPage({
     setSubmittedQuery(nextQuery)
     setHasSubmitted(true)
     setActionMessage('')
+    setAiSearchNotice('')
     setUnavailableFolder('')
     setError('')
     setLoading(Boolean(api?.searchFiles && hasIndexedFolders))
@@ -146,6 +153,9 @@ function SearchPage({
         <h1 className="page-title">What are you looking for?</h1>
         <p className="page-subtitle">
           Search filenames, file types, folders, and paths in your indexed folders.
+        </p>
+        <p className="search-privacy-note">
+          For natural-language searches, only the query may be sent to your configured AI provider. File contents are not sent.
         </p>
       </div>
 
@@ -225,6 +235,7 @@ function SearchPage({
           </div>
 
           {error && <div className="search-error" role="alert">{error}</div>}
+          {aiSearchNotice && <div className="search-ai-notice" role="status">{aiSearchNotice}</div>}
           {actionMessage && <div className="search-action-message" role="status">{actionMessage}</div>}
           {unavailableFolder && (
             <button
@@ -279,9 +290,12 @@ function SearchPage({
                   {file.parentFolder}
                 </p>
                 {file.aiMatch && (
-                  <p className="search-ai-explanation">
-                    <strong>Why this matched:</strong> {file.matchExplanation}
-                  </p>
+                  <div className="search-ai-match">
+                    <span>AI match</span>
+                    <p className="search-ai-explanation">
+                      <strong>Why this matched:</strong> {file.matchExplanation}
+                    </p>
+                  </div>
                 )}
                 <div className="search-result-actions">
                   <button type="button" onClick={() => runFileAction('openFile', file, 'File opened.')}>Open File</button>
