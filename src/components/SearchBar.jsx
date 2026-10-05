@@ -26,6 +26,7 @@ function SearchBar({
           <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
           <path d="m16 16 4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
+        <span className="search-ai-mark" aria-hidden="true">✦</span>
         <input
           type="text"
           className="search-input"

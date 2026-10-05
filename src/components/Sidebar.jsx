@@ -27,7 +27,7 @@ const NAV_ITEMS = [
   },
   {
     id: 'assistant',
-    label: 'Assistant',
+    label: 'AI Assistant',
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-5 3v-3H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
@@ -37,7 +37,7 @@ const NAV_ITEMS = [
   },
   {
     id: 'organize',
-    label: 'Organize',
+    label: 'Organization',
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M3.5 8.5 12 3l8.5 5.5V20a1 1 0 0 1-1 1H4.5a1 1 0 0 1-1-1V8.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
@@ -64,7 +64,7 @@ const NAV_ITEMS = [
 
 function Sidebar({ activePage, onNavigate, folderCount, indexing, totalFiles }) {
   const statusLabel = indexing ? 'Indexing' : 'Ready'
-  let statusHint = 'Indexing will start after you add folders.'
+  let statusHint = 'Add a folder to build your local index.'
 
   if (indexing) {
     statusHint = 'Scanning selected folders…'
@@ -79,9 +79,10 @@ function Sidebar({ activePage, onNavigate, folderCount, indexing, totalFiles }) 
     <aside className="sidebar">
       <div className="sidebar-brand">
         <div className="brand-icon" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-            <circle cx="11" cy="11" r="6.5" stroke="white" strokeWidth="2" />
-            <path d="m16 16 4 4" stroke="white" strokeWidth="2" strokeLinecap="round" />
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none">
+            <path d="M3.5 7.5h7l1.7 2H20a1 1 0 0 1 1 1v7.7a1.3 1.3 0 0 1-1.3 1.3H4.3A1.3 1.3 0 0 1 3 18.2V8a.5.5 0 0 1 .5-.5Z" stroke="white" strokeWidth="1.6" strokeLinejoin="round" />
+            <circle cx="11" cy="13" r="3" stroke="white" strokeWidth="1.5" />
+            <path d="m13.2 15.2 2.2 2.2M18 4v3M16.5 5.5h3" stroke="white" strokeWidth="1.4" strokeLinecap="round" />
           </svg>
         </div>
         <span className="brand-name">FileFinder AI</span>
@@ -105,9 +106,15 @@ function Sidebar({ activePage, onNavigate, folderCount, indexing, totalFiles }) 
       <div className="sidebar-status">
         <div className="status-row">
           <span className={`status-dot${indexing ? ' indexing' : ''}`} aria-hidden="true" />
-          <span className="status-label">{statusLabel}</span>
+          <span className="status-label">{indexing ? statusLabel : 'Indexed locally'}</span>
         </div>
         <p className="status-hint">{statusHint}</p>
+        {folderCount > 0 && <div className="sidebar-index-stats"><strong>{folderCount.toLocaleString()}</strong><span>folders</span><i /><strong>{totalFiles.toLocaleString()}</strong><span>files</span></div>}
+      </div>
+
+      <div className="sidebar-user">
+        <div className="sidebar-avatar" aria-hidden="true">FF</div>
+        <div><strong>FileFinder AI</strong><span>Local workspace</span></div>
       </div>
     </aside>
   )

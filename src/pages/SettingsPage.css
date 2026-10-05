@@ -8,14 +8,21 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-card);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 8px rgb(20 28 50 / 3%);
+  transition:border-color var(--transition),box-shadow var(--transition);
 }
+.settings-section:hover { border-color:#dcdeea; box-shadow:0 4px 14px rgb(20 28 50 / 5%); }
 
 .settings-section h2 {
   font-size: 15px;
   font-weight: 650;
   margin-bottom: 8px;
 }
+
+.settings-section-heading { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:8px; }
+.settings-section-heading h2 { margin-bottom:0; }
+.settings-config-badge { display:inline-flex; align-items:center; min-height:23px; padding:0 8px; border:1px solid #eedebd; border-radius:999px; background:#fff9ed; color:#916a2e; font-size:9px; font-weight:700; white-space:nowrap; }
+.settings-config-badge.is-configured { border-color:#d6eadc; background:#f1faf4; color:#36734d; }
 
 .settings-desc {
   font-size: 13px;
@@ -41,10 +48,13 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 10px 12px;
+  position:relative;
+  padding: 11px 12px 11px 34px;
+  border:1px solid #eceef2;
   border-radius: var(--radius-sm);
-  background: var(--bg-app);
+  background: #fafbfc;
 }
+.settings-folder-list li::before { content:""; position:absolute; left:12px; top:14px; width:13px; height:10px; border:1.5px solid #7770cd; border-radius:2px; background:#f0efff; }
 
 .settings-folder-list strong {
   font-size: 13px;
@@ -91,6 +101,7 @@
   font-weight: 600;
   transition: background var(--transition), border-color var(--transition);
 }
+.settings-action-btn:not(:disabled):active { transform:translateY(1px); }
 
 .settings-action-btn:hover:not(:disabled) {
   background: var(--accent-soft);
@@ -124,6 +135,7 @@
   border-radius: var(--radius-sm);
   background: var(--bg-app);
 }
+.settings-ai-privacy { padding:10px 12px; border:1px solid #eeeafc; border-radius:var(--radius-sm); background:#faf9ff; }
 
 .settings-ai-progress {
   display: flex;
@@ -147,6 +159,8 @@
   background: var(--accent);
   transition: width 180ms ease;
 }
+
+.settings-ai-message { padding:9px 11px; border:1px solid #d9eadf; border-radius:8px; background:#f3faf5; color:#39704f; }
 
 .settings-ai-progress small {
   overflow: hidden;

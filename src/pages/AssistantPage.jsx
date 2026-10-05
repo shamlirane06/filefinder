@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
+import PreviewModal from '../components/PreviewModal'
 import './AssistantPage.css'
 
 const api = typeof window !== 'undefined' ? window.fileFinder : null
+const PREVIEW_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf'])
 const EXAMPLES = [
-  'Find my internship certificate',
-  'What certificates do I have?',
-  'Show my college documents',
-  'Find my recent PDFs',
+  'Find my certificates',
+  'Show recent PDFs',
+  'Where is my resume?',
+  'Find internship documents',
 ]
 
 function formatSize(bytes) {
@@ -35,6 +37,20 @@ function formatDate(value) {
 function AssistantFileCard({ file, onReindexFolder, indexing }) {
   const [status, setStatus] = useState('')
   const [unavailable, setUnavailable] = useState(false)
+  const [thumbnail, setThumbnail] = useState('')
+  const [previewingFile, setPreviewingFile] = useState(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+
+  useEffect(() => {
+    if (!api?.getFilePreview || !PREVIEW_EXTENSIONS.has(file.extension?.toLowerCase())) return undefined
+    let active = true
+    api.getFilePreview(file.fullPath, 'thumbnail').then((result) => {
+      if (!active) return
+      if (result?.status === 'ready' && result.dataUrl) setThumbnail(result.dataUrl)
+      if (result?.status === 'unavailable') setUnavailable(true)
+    }).catch(() => {})
+    return () => { active = false }
+  }, [file.fullPath, file.extension])
 
   async function runAction(action) {
     if (!api?.[action]) {
@@ -51,12 +67,31 @@ function AssistantFileCard({ file, onReindexFolder, indexing }) {
     }
   }
 
+  async function openPreview() {
+    if (!api?.getFilePreview || previewLoading) return
+    setPreviewLoading(true)
+    setStatus('')
+    try {
+      const result = await api.getFilePreview(file.fullPath, 'large')
+      if (result?.status === 'ready' && result.dataUrl) {
+        setPreviewingFile({ ...file, preview: result.dataUrl })
+      } else {
+        if (result?.status === 'unavailable') setUnavailable(true)
+        setStatus(result?.status === 'unavailable' ? 'This file may have been moved or deleted.' : 'Preview is unavailable for this file.')
+      }
+    } catch {
+      setStatus('Preview could not be loaded. Please try again.')
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
   return (
     <article className="search-result-card assistant-file-card">
       <div className="search-result-heading">
-        <div className="assistant-file-type" aria-hidden="true">
+        {thumbnail ? <img className="assistant-file-thumbnail" src={thumbnail} alt={`Preview of ${file.filename}`} /> : <div className="assistant-file-type" aria-hidden="true">
           {file.extension ? file.extension.replace('.', '').slice(0, 4).toUpperCase() : 'FILE'}
-        </div>
+        </div>}
         <div className="search-file-title">
           <h3>{file.filename}</h3>
           <p>{file.fileType || 'File'} · {formatSize(file.size)} · Modified {formatDate(file.modifiedAt)}</p>
@@ -65,6 +100,7 @@ function AssistantFileCard({ file, onReindexFolder, indexing }) {
       <p className="search-file-location" title={file.parentFolder}>{file.parentFolder}</p>
       {file.documentType && <p className="assistant-file-document-type">{file.documentType}</p>}
       <div className="search-result-actions">
+        <button type="button" onClick={openPreview} disabled={previewLoading}>{previewLoading ? 'Loading preview…' : 'Preview'}</button>
         <button type="button" onClick={() => runAction('openFile')}>Open File</button>
         <button type="button" onClick={() => runAction('openFolder')}>Open Folder</button>
       </div>
@@ -73,6 +109,14 @@ function AssistantFileCard({ file, onReindexFolder, indexing }) {
         <button type="button" className="assistant-reindex-button" onClick={() => onReindexFolder?.(file.rootFolder)} disabled={indexing}>
           {indexing ? 'Re-indexing…' : 'Re-index folder'}
         </button>
+      )}
+      {previewingFile && (
+        <PreviewModal
+          file={previewingFile}
+          onClose={() => setPreviewingFile(null)}
+          onOpenFile={(selectedFile) => { setPreviewingFile(null); runAction('openFile', selectedFile) }}
+          onOpenFolder={(selectedFile) => { setPreviewingFile(null); runAction('openFolder', selectedFile) }}
+        />
       )}
     </article>
   )
@@ -123,7 +167,7 @@ function AssistantPage({ folders, onAddFolder, onReindexFolder, onReindexAll, in
     <div className="page assistant-page">
       <header className="page-header">
         <div className="page-eyebrow">Assistant</div>
-        <h1 className="page-title">FileFinder AI</h1>
+        <h1 className="page-title">FileFinder AI Assistant</h1>
         <p className="page-subtitle">Ask questions about your files.</p>
       </header>
 
@@ -147,8 +191,8 @@ function AssistantPage({ folders, onAddFolder, onReindexFolder, onReindexAll, in
           {messages.length === 0 && (
             <div className="assistant-welcome">
               <div className="assistant-welcome-mark" aria-hidden="true">✦</div>
-              <h2>Ask me about your indexed files.</h2>
-              <p>I’ll search your local index and show the files that support each answer.</p>
+              <h2>Hi! I can help you find and understand files in your indexed folders.</h2>
+              <p>Answers are grounded in your indexed files, with source files shown alongside the response.</p>
               <div className="assistant-examples">
                 {EXAMPLES.map((example) => (
                   <button type="button" key={example} onClick={() => submitQuestion(example)} disabled={loading || !desktopAvailable}>

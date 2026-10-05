@@ -140,9 +140,14 @@ function SettingsPage({
       </section>
 
       <section className="settings-section">
-        <h2>AI Configuration</h2>
+        <div className="settings-section-heading">
+          <h2>AI Configuration</h2>
+          <span className={`settings-config-badge${aiStatus?.configured ? ' is-configured' : ''}`}>
+            {aiStatus ? (aiStatus.configured ? 'Configured' : 'Not configured') : 'Checking status'}
+          </span>
+        </div>
         <p className="settings-desc">
-          Analyze supported JPG, JPEG, PNG, WEBP, and PDF files to make their contents searchable.
+          AI-powered file understanding. Analyze supported JPG, JPEG, PNG, WEBP, and PDF files to make their contents searchable.
           Only files in your selected folders are considered. Images are limited to 15 MB and PDFs to 20 MB.
         </p>
         <p className="settings-ai-privacy">
@@ -185,15 +190,16 @@ function SettingsPage({
       <section className="settings-section">
         <h2>Privacy</h2>
         <p className="settings-desc">
-          FileFinder AI only indexes folders you explicitly select. Indexing and search stay on your computer.
-          Content is sent to the configured AI provider only after you choose “Analyze files with AI.”
+          FileFinder AI only indexes folders you explicitly select. Indexing and keyword search are local.
+          Natural-language queries and relevant file metadata used for assistant answers or organization suggestions may be sent to your configured AI provider.
+          File contents are submitted only when you choose “Analyze files with AI.”
         </p>
       </section>
 
       <section className="settings-section">
         <h2>Application Information</h2>
         <p className="settings-desc">
-          FileFinder AI v0.2.0 — Phase 2 indexing. Find, understand, and organize your files.
+          FileFinder AI v0.1.0 desktop application · Local SQLite index · {totalFiles.toLocaleString()} {totalFiles === 1 ? 'file' : 'files'} indexed.
         </p>
       </section>
     </div>

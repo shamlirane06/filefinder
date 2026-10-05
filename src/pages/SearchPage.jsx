@@ -317,9 +317,9 @@ function SearchPage({
     <div className="page search-page">
       <div className="page-header">
         <div className="page-eyebrow">Search</div>
-        <h1 className="page-title">What are you looking for?</h1>
+        <h1 className="page-title">Search your files</h1>
         <p className="page-subtitle">
-          Search filenames, file types, folders, and paths in your indexed folders.
+          Describe what you’re looking for in your indexed folders.
         </p>
         <p className="search-privacy-note">
           For natural-language searches, only the query may be sent to your configured AI provider. File contents are not sent.
@@ -350,6 +350,7 @@ function SearchPage({
             value={searchQuery}
             onChange={onSearchQueryChange}
             onSubmit={handleSearch}
+            placeholder="Try “Find my graduation certificate”"
           />
 
           <div className="search-controls" aria-label="Search filters and sorting">
@@ -536,6 +537,10 @@ function SearchPage({
           onOpenFile={(file) => {
             setPreviewingFile(null)
             runFileAction('openFile', file, 'File opened.')
+          }}
+          onOpenFolder={(file) => {
+            setPreviewingFile(null)
+            runFileAction('openFolder', file, 'Folder opened.')
           }}
         />
       )}

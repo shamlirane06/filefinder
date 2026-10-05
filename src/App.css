@@ -2,7 +2,7 @@
   display: flex;
   height: 100%;
   width: 100%;
-  background: var(--bg-main);
+  background: var(--bg-app);
 }
 
 .main-area {
@@ -10,16 +10,18 @@
   min-width: 0;
   height: 100%;
   overflow: auto;
-  background: var(--bg-main);
+  background: var(--bg-app);
 }
 
 .page {
   min-height: 100%;
-  padding: 36px 48px 48px;
+  padding: 34px clamp(24px, 4vw, 58px) 50px;
+  max-width: 1660px;
+  margin: 0 auto;
 }
 
 .page-header {
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 
 .page-eyebrow {
@@ -29,18 +31,25 @@
 }
 
 .page-title {
-  font-size: 28px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
+  font-size: clamp(26px, 2.3vw, 32px);
+  font-weight: 700;
+  letter-spacing: -0.035em;
   color: var(--text-primary);
 }
 
 .page-subtitle {
   margin-top: 8px;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--text-secondary);
   line-height: 1.5;
   max-width: 520px;
+}
+
+@media (max-width: 900px) {
+  .page { padding: 28px 28px 40px; }
+}
+@media (max-width: 680px) {
+  .page { padding: 22px 18px 34px; }
 }
 
 .placeholder-card {
