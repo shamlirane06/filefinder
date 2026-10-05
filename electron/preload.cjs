@@ -1,6 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('fileFinder', {
+  minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
+  toggleMaximizeWindow: () => ipcRenderer.invoke('window:toggleMaximize'),
+  closeWindow: () => ipcRenderer.invoke('window:close'),
+
   getFolders: () => ipcRenderer.invoke('folders:get'),
   selectFolder: () => ipcRenderer.invoke('folders:select'),
   removeFolder: (folderPath) => ipcRenderer.invoke('folders:remove', folderPath),

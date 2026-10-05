@@ -98,7 +98,7 @@ function HomePage({ folders, loading: foldersLoading, adding, error, desktopAvai
   return <div className="page home-page">
     <header className="dashboard-header">
       <div><div className="page-eyebrow">DASHBOARD</div><p className="dashboard-greeting">{greeting}, Shamli</p><h1 className="page-title">Your files, understood.</h1><p className="page-subtitle">Find anything in your indexed folders using natural language.</p></div>
-      <div className="dashboard-header-actions"><span className="dashboard-index-chip"><i /> Indexed locally</span><button type="button" className="dashboard-profile" aria-label="FileFinder local workspace">S</button></div>
+      <div className="dashboard-header-actions"><span className="dashboard-index-chip"><i /> Indexed locally</span></div>
     </header>
 
     <div className="dashboard-search-wrap"><SearchBar value={searchQuery} onChange={onSearchQueryChange} onSubmit={handleSearch} placeholder="Try “Find my graduation certificate”" /></div>

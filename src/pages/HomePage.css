@@ -7,7 +7,6 @@
 .dashboard-header-actions { display:flex; align-items:center; gap:13px; padding-top:5px; }
 .dashboard-index-chip { display:inline-flex; align-items:center; gap:7px; min-height:30px; padding:0 10px; border:1px solid #d7e9de; border-radius:999px; background:#f2faf5; color:#357552; font-size:11px; font-weight:650; white-space:nowrap; }
 .dashboard-index-chip i,.dashboard-insight-foot i { width:7px; height:7px; border-radius:50%; background:#36a269; }
-.dashboard-profile { display:grid; width:34px; height:34px; place-items:center; border:1px solid #ddd9fc; border-radius:50%; background:#eeecff; color:#5147a8; font-size:12px; font-weight:750; }
 .dashboard-search-wrap { margin-bottom:19px; }
 .dashboard-search-wrap .search-bar { max-width:780px; }
 .dashboard-error { margin:0 0 15px; padding:11px 13px; border:1px solid #f1d2cf; border-radius:10px; background:#fff7f6; color:#9e4038; font-size:12px; }

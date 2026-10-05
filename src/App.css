@@ -1,4 +1,5 @@
 .app-shell {
+  position:relative;
   display: flex;
   height: 100%;
   width: 100%;
@@ -22,7 +23,41 @@
 
 .page-header {
   margin-bottom: 24px;
+  -webkit-app-region: drag;
 }
+
+.dashboard-header { -webkit-app-region:drag; }
+
+.window-controls {
+  position:fixed;
+  z-index:1200;
+  top:5px;
+  right:8px;
+  display:flex;
+  align-items:center;
+  gap:2px;
+  height:27px;
+  padding:2px;
+  border:1px solid #e4e5eb;
+  border-radius:8px;
+  background:rgb(255 255 255 / 94%);
+  box-shadow:0 2px 8px rgb(20 28 50 / 7%);
+  -webkit-app-region:no-drag;
+}
+
+.window-controls button {
+  display:grid;
+  width:31px;
+  height:21px;
+  place-items:center;
+  border-radius:5px;
+  color:#596071;
+  -webkit-app-region:no-drag;
+}
+
+.window-controls button:hover { background:#f0f1f5; }
+.window-controls button svg { width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:1.2; stroke-linecap:round; stroke-linejoin:round; }
+.window-controls .window-control-close:hover { background:#e5484d; color:#fff; }
 
 .page-eyebrow {
   font-size: 13px;

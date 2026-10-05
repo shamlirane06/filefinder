@@ -231,6 +231,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1180,
     height: 780,
+    frame: false,
+    autoHideMenuBar: true,
     minWidth: 760,
     minHeight: 520,
     title: 'FileFinder AI',
@@ -243,6 +245,7 @@ function createWindow() {
     },
     show: false,
   })
+  mainWindow.setMenu(null)
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
@@ -310,6 +313,22 @@ app.on('before-quit', () => {
 
 handleIpc('folders:get', () => {
   return mergeFoldersWithIndex(loadSelectedFolders())
+})
+
+handleIpc('window:minimize', () => {
+  mainWindow.minimize()
+  return { ok: true }
+})
+
+handleIpc('window:toggleMaximize', () => {
+  if (mainWindow.isMaximized()) mainWindow.unmaximize()
+  else mainWindow.maximize()
+  return { ok: true, maximized: mainWindow.isMaximized() }
+})
+
+handleIpc('window:close', () => {
+  mainWindow.close()
+  return { ok: true }
 })
 
 handleIpc('folders:select', async () => {
