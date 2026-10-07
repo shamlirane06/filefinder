@@ -167,8 +167,8 @@ function AssistantPage({ folders, onAddFolder, onReindexFolder, onReindexAll, in
     <div className="page assistant-page">
       <header className="page-header">
         <div className="page-eyebrow">Assistant</div>
-        <h1 className="page-title">FileFinder AI Assistant</h1>
-        <p className="page-subtitle">Ask questions about your files.</p>
+        <h1 className="page-title">Find files with AI</h1>
+        <p className="page-subtitle">Describe a file or ask where it is in your indexed folders.</p>
       </header>
 
       {indexedCount === 0 && (
@@ -191,7 +191,7 @@ function AssistantPage({ folders, onAddFolder, onReindexFolder, onReindexAll, in
           {messages.length === 0 && (
             <div className="assistant-welcome">
               <div className="assistant-welcome-mark" aria-hidden="true">✦</div>
-              <h2>Hi! I can help you find and understand files in your indexed folders.</h2>
+              <h2>Ask me to find a file.</h2>
               <p>Answers are grounded in your indexed files, with source files shown alongside the response.</p>
               <div className="assistant-examples">
                 {EXAMPLES.map((example) => (

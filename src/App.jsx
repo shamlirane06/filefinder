@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Sidebar from './components/Sidebar'
 import HomePage from './pages/HomePage'
 import SearchPage from './pages/SearchPage'
@@ -40,6 +40,9 @@ function App() {
   const [activePage, setActivePage] = useState('home')
   const [searchQuery, setSearchQuery] = useState('')
   const [recentSearches, setRecentSearches] = useState([])
+  useEffect(() => {
+    document.documentElement.dataset.reducedMotion = localStorage.getItem('filefinder-reduced-motion') === 'true' ? 'true' : 'false'
+  }, [])
   const rememberSearch = useCallback((query) => {
     const value = String(query || '').trim()
     if (!value) return

@@ -17,6 +17,15 @@ function SettingsPage({
   const [aiProgress, setAiProgress] = useState(null)
   const [aiRunning, setAiRunning] = useState(false)
   const [aiMessage, setAiMessage] = useState('')
+  const [reducedMotion, setReducedMotion] = useState(() => {
+    try { return localStorage.getItem('filefinder-reduced-motion') === 'true' } catch { return false }
+  })
+
+  function updateReducedMotion(enabled) {
+    setReducedMotion(enabled)
+    document.documentElement.dataset.reducedMotion = enabled ? 'true' : 'false'
+    try { localStorage.setItem('filefinder-reduced-motion', String(enabled)) } catch { /* Keep the current-session preference. */ }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -185,6 +194,18 @@ function SettingsPage({
         {aiStatus?.failed > 0 && !aiRunning && (
           <p className="settings-ai-status">{aiStatus.failed.toLocaleString()} files could not be analyzed. Start analysis again to retry them.</p>
         )}
+      </section>
+
+      <section className="settings-section">
+        <h2>Appearance</h2>
+        <div className="settings-appearance-row">
+          <div><strong>Theme</strong><span>Light</span></div>
+          <p>The current FileFinder AI theme.</p>
+        </div>
+        <label className="settings-motion-row">
+          <span><strong>Reduced motion</strong><small>Reduce interface animation and transitions.</small></span>
+          <input type="checkbox" checked={reducedMotion} onChange={(event) => updateReducedMotion(event.target.checked)} />
+        </label>
       </section>
 
       <section className="settings-section">

@@ -112,10 +112,6 @@ function Sidebar({ activePage, onNavigate, folderCount, indexing, totalFiles }) 
         {folderCount > 0 && <div className="sidebar-index-stats"><strong>{folderCount.toLocaleString()}</strong><span>folders</span><i /><strong>{totalFiles.toLocaleString()}</strong><span>files</span></div>}
       </div>
 
-      <div className="sidebar-user">
-        <div className="sidebar-avatar" aria-hidden="true">FF</div>
-        <div><strong>FileFinder AI</strong><span>Local workspace</span></div>
-      </div>
     </aside>
   )
 }

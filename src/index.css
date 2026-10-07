@@ -29,7 +29,7 @@
   --radius-lg: 16px;
   --radius-xl: 20px;
   --sidebar-width: 232px;
-  --font: 'Segoe UI', 'Segoe UI Variable', system-ui, -apple-system, sans-serif;
+  --font: Inter, 'Segoe UI', 'Segoe UI Variable', system-ui, -apple-system, sans-serif;
   --transition: 160ms ease;
 }
 
@@ -105,4 +105,12 @@ a {
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+:root[data-reduced-motion='true'] *,
+:root[data-reduced-motion='true'] *::before,
+:root[data-reduced-motion='true'] *::after {
+  animation-duration: .01ms !important;
+  transition-duration: .01ms !important;
+  scroll-behavior: auto !important;
 }

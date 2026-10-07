@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import SearchBar from '../components/SearchBar'
+import PreviewModal from '../components/PreviewModal'
 import './HomePage.css'
 
 const api = typeof window !== 'undefined' ? window.fileFinder : null
@@ -30,7 +31,7 @@ function StatIcon({ kind }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[kind]}</svg>
 }
 
-function RecentFile({ file, onActionError }) {
+function RecentFile({ file, onActionError, onPreview }) {
   const [preview, setPreview] = useState('')
   const [message, setMessage] = useState('')
   useEffect(() => {
@@ -48,12 +49,27 @@ function RecentFile({ file, onActionError }) {
       setMessage(result?.ok ? 'Opened' : result?.unavailable ? 'Unavailable' : 'Could not open')
     } catch { setMessage('Could not open') }
   }
+  async function previewFile() {
+    if (!api?.getFilePreview) { setMessage('Preview is unavailable in this view.'); return }
+    setMessage('')
+    try {
+      const result = await api.getFilePreview(file.fullPath, 'large')
+      if (result?.status === 'ready' && result.dataUrl) onPreview({ ...file, preview: result.dataUrl })
+      else {
+        if (result?.status === 'unavailable') onActionError(file.rootFolder)
+        setMessage(result?.status === 'unavailable' ? 'This file may have been moved or deleted.' : 'Preview is unavailable for this file type.')
+      }
+    } catch { setMessage('Preview could not be loaded. Please try again.') }
+  }
   return <article className="dashboard-file-row">
     {preview ? <img className="dashboard-file-thumb" src={preview} alt={`Preview of ${file.filename}`} /> : <div className="dashboard-file-thumb dashboard-file-icon" aria-hidden="true">{file.extension?.replace('.', '').slice(0, 4).toUpperCase() || 'FILE'}</div>}
     <div className="dashboard-file-name"><strong title={file.filename}>{file.filename}</strong><span>{file.fileType || 'File'} · {formatSize(file.size)}</span></div>
     <span className="dashboard-file-location" title={file.parentFolder}>{file.parentFolder}</span>
     <time className="dashboard-file-date" dateTime={file.modifiedAt || undefined}>{formatDate(file.modifiedAt)}</time>
-    <button type="button" className="dashboard-file-open" onClick={openFile}>Open</button>
+    <div className="dashboard-file-actions">
+      {PREVIEW_EXTENSIONS.has(file.extension?.toLowerCase()) && <button type="button" className="dashboard-file-preview" onClick={previewFile}>Preview</button>}
+      <button type="button" className="dashboard-file-open" onClick={openFile}>Open</button>
+    </div>
     {message && <span className="dashboard-file-status" role="status">{message}</span>}
   </article>
 }
@@ -63,6 +79,8 @@ function HomePage({ folders, loading: foldersLoading, adding, error, desktopAvai
   const [dashboardLoading, setDashboardLoading] = useState(Boolean(api?.getDashboardData))
   const [dashboardError, setDashboardError] = useState(false)
   const [unavailableFolder, setUnavailableFolder] = useState('')
+  const [previewingFile, setPreviewingFile] = useState(null)
+  const [previewActionMessage, setPreviewActionMessage] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -90,24 +108,31 @@ function HomePage({ folders, loading: foldersLoading, adding, error, desktopAvai
     ['pdf', 'PDFs', stats?.pdfs, 'Documents ready to search'],
     ['folders', 'Indexed folders', stats?.totalFolders, 'Your local workspace'],
   ]
-  const [greeting] = useState(() => {
-    const hour = new Date().getHours()
-    return hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
-  })
-
   return <div className="page home-page">
     <header className="dashboard-header">
-      <div><div className="page-eyebrow">DASHBOARD</div><p className="dashboard-greeting">{greeting}, Shamli</p><h1 className="page-title">Your files, understood.</h1><p className="page-subtitle">Find anything in your indexed folders using natural language.</p></div>
+      <div className="dashboard-heading-copy">
+        <div className="dashboard-breadcrumb"><span>FileFinder AI</span><span aria-hidden="true">/</span><span>Home</span></div>
+        <p className="dashboard-greeting">Welcome back</p>
+        <h1 className="page-title">Find anything.</h1>
+        <p className="page-subtitle">Your files, understood. Search your selected folders in your own words.</p>
+      </div>
       <div className="dashboard-header-actions"><span className="dashboard-index-chip"><i /> Indexed locally</span></div>
     </header>
 
-    <div className="dashboard-search-wrap"><SearchBar value={searchQuery} onChange={onSearchQueryChange} onSubmit={handleSearch} placeholder="Try “Find my graduation certificate”" /></div>
+    <section className="dashboard-hero" aria-label="Find a file">
+      <div className="dashboard-hero-copy">
+        <span className="dashboard-hero-kicker"><i /> Search across your indexed folders</span>
+        <p>Describe the file you need. FileFinder will show relevant matches and where they live.</p>
+      </div>
+      <div className="dashboard-ai-orbit" aria-hidden="true">
+        <span className="dashboard-orbit-ring dashboard-orbit-ring-outer" />
+        <span className="dashboard-orbit-ring dashboard-orbit-ring-inner" />
+        <span className="dashboard-orbit-core">✦</span>
+      </div>
+      <div className="dashboard-search-wrap"><SearchBar value={searchQuery} onChange={onSearchQueryChange} onSubmit={handleSearch} placeholder="Find my graduation certificate…" /></div>
+    </section>
 
     {dashboardError && <div className="dashboard-error" role="alert">Dashboard data could not be loaded. Please try again.</div>}
-
-    <section className="dashboard-stat-grid" aria-label="Index summary">
-      {statItems.map(([kind, label, value, detail]) => <article className="dashboard-stat-card" key={label}><div className={`dashboard-stat-icon dashboard-stat-icon-${kind}`}><StatIcon kind={kind} /></div><div className="dashboard-stat-label">{label}</div><strong>{dashboardLoading || foldersLoading ? '—' : Number(value || 0).toLocaleString()}</strong><span className="dashboard-stat-detail">{detail}</span></article>)}
-    </section>
 
     {folders.length === 0 && <section className="dashboard-empty-state"><div className="dashboard-empty-art" aria-hidden="true"><StatIcon kind="folders" /><span>⌕</span></div><h2>Start finding your files</h2><p>Add a folder and FileFinder AI will index it so you can search naturally.</p><button type="button" onClick={onAddFolder} disabled={!desktopAvailable || adding}>{adding ? 'Opening…' : '+ Add Folder'}</button><small>Your file index remains on this device.</small></section>}
     {folders.length > 0 && stats?.totalFiles === 0 && !dashboardLoading && <section className="dashboard-empty-state"><div className="dashboard-empty-art" aria-hidden="true"><StatIcon kind="folders" /><span>⌕</span></div><h2>No files have been indexed yet</h2><p>Add or re-index a folder to get started.</p><button type="button" onClick={onAddFolder} disabled={!desktopAvailable || adding || indexing}>Add Folder</button></section>}
@@ -115,7 +140,24 @@ function HomePage({ folders, loading: foldersLoading, adding, error, desktopAvai
     {indexing && <div className="dashboard-indexing" role="status"><span className="dashboard-spinner" /><span><strong>Indexing your files…</strong><small>FileFinder is updating your local index.</small></span></div>}
 
     <section className="dashboard-section">
-      <div className="dashboard-section-heading"><div><h2>Quick actions</h2><p>Jump straight into your next task.</p></div></div>
+      <div className="dashboard-section-heading"><div><h2>Back in focus</h2><p>Recently modified in your indexed folders.</p></div><button className="dashboard-text-button" onClick={() => onNavigate('search')}>Browse all files <span aria-hidden="true">→</span></button></div>
+      <div className="dashboard-recent-layout">
+        <div className="dashboard-recent-panel">
+          <div className="dashboard-file-table-head"><span>File name</span><span>Folder</span><span>Modified</span><span /></div>
+          {dashboardLoading ? <div className="dashboard-skeleton-list" role="status" aria-label="Loading recent files">{Array.from({ length: 4 }, (_, index) => <div className="dashboard-skeleton-row" key={index}><i /><span /><span /><span /></div>)}</div>
+            : dashboard?.recentFiles?.length ? dashboard.recentFiles.map((file) => <RecentFile key={file.fullPath} file={file} onActionError={setUnavailableFolder} onPreview={setPreviewingFile} />)
+              : <p className="dashboard-muted">{folders.length ? 'No recently modified files are in the index.' : 'Add and index a folder to see your recent files here.'}</p>}
+        </div>
+        <aside className="dashboard-insight-card"><span className="dashboard-insight-icon" aria-hidden="true">✦</span><div className="dashboard-insight-label">FILEFINDER AI</div><h3>AI pattern worth finding</h3><p>Search can connect your request to indexed names, document text, and file descriptions when available.</p><button type="button" onClick={() => handleSearch('certificates')}>Review files <span aria-hidden="true">→</span></button><div className="dashboard-insight-foot"><i /> Grounded in your indexed files</div></aside>
+      </div>
+    </section>
+
+    <section className="dashboard-stat-grid" aria-label="Index summary">
+      {statItems.map(([kind, label, value, detail]) => <article className="dashboard-stat-card" key={label}><div className={`dashboard-stat-icon dashboard-stat-icon-${kind}`}><StatIcon kind={kind} /></div><div className="dashboard-stat-label">{label}</div><strong>{dashboardLoading || foldersLoading ? '—' : Number(value || 0).toLocaleString()}</strong><span className="dashboard-stat-detail">{detail}</span></article>)}
+    </section>
+
+    <section className="dashboard-section">
+      <div className="dashboard-section-heading"><div><h2>Quick actions</h2><p>Choose what you want to do next.</p></div></div>
       <div className="dashboard-quick-actions">
         <button onClick={() => onNavigate('search')}><span className="quick-action-icon"><StatIcon kind="files" /></span><strong>Search Files</strong><small>Find files using natural language</small></button>
         <button className="quick-action-ai" onClick={() => onNavigate('assistant')}><span className="quick-action-icon" aria-hidden="true">✦</span><strong>AI Assistant</strong><small>Ask questions about your files</small><i>AI</i></button>
@@ -124,22 +166,25 @@ function HomePage({ folders, loading: foldersLoading, adding, error, desktopAvai
       </div>
     </section>
 
-    <section className="dashboard-section">
-      <div className="dashboard-section-heading"><div><h2>Recently modified</h2><p>The latest changes in your indexed folders.</p></div><button className="dashboard-text-button" onClick={() => onNavigate('search')}>Browse all files <span aria-hidden="true">→</span></button></div>
-      <div className="dashboard-recent-layout">
-        <div className="dashboard-recent-panel">
-          <div className="dashboard-file-table-head"><span>File name</span><span>Folder</span><span>Modified</span><span /></div>
-          {dashboardLoading ? <div className="dashboard-skeleton-list" role="status" aria-label="Loading recent files">{Array.from({ length: 4 }, (_, index) => <div className="dashboard-skeleton-row" key={index}><i /><span /><span /><span /></div>)}</div>
-            : dashboard?.recentFiles?.length ? dashboard.recentFiles.map((file) => <RecentFile key={file.fullPath} file={file} onActionError={setUnavailableFolder} />)
-              : <p className="dashboard-muted">{folders.length ? 'No recently modified files are in the index.' : 'Add and index a folder to see your recent files here.'}</p>}
-        </div>
-        <aside className="dashboard-insight-card"><span className="dashboard-insight-icon" aria-hidden="true">✦</span><div className="dashboard-insight-label">FILEFINDER AI</div><h3>AI understands your files</h3><p>Search can use titles, descriptions, keywords, and text already indexed for your documents.</p><button type="button" onClick={() => handleSearch('certificates')}>Find certificates <span aria-hidden="true">→</span></button><div className="dashboard-insight-foot"><i /> Grounded in your indexed files</div></aside>
-      </div>
-    </section>
-
     {recentSearches?.length > 0 && <section className="dashboard-section"><div className="dashboard-section-heading"><div><h2>Recent searches</h2><p>Only saved for this app session.</p></div></div><div className="dashboard-search-list">{recentSearches.map((query) => <button key={query} onClick={() => handleSearch(query)}><span aria-hidden="true">⌕</span>{query}</button>)}</div></section>}
     {error && <p className="dashboard-error" role="alert">{error === 'Folder already added.' ? error : 'The folder action could not be completed. Please try again.'}</p>}
     {unavailableFolder && <div className="dashboard-file-unavailable" role="alert"><div><strong>File unavailable</strong><span>This file may have been moved or deleted.</span></div><button type="button" onClick={() => { onReindexFolder?.(unavailableFolder); setUnavailableFolder('') }} disabled={indexing}>{indexing ? 'Re-indexing…' : 'Re-index folder'}</button><button type="button" aria-label="Dismiss file unavailable message" onClick={() => setUnavailableFolder('')}>×</button></div>}
+    {previewActionMessage && <p className="dashboard-error" role="status">{previewActionMessage}</p>}
+    {previewingFile && <PreviewModal file={previewingFile} onClose={() => setPreviewingFile(null)} onOpenFile={async (file) => {
+      try {
+        const result = await api?.openFile?.(file.fullPath)
+        if (result?.unavailable) setUnavailableFolder(file.rootFolder)
+        if (result?.ok) setPreviewingFile(null)
+        else setPreviewActionMessage(result?.error || 'The file could not be opened.')
+      } catch { setPreviewActionMessage('The file could not be opened. Please try again.') }
+    }} onOpenFolder={async (file) => {
+      try {
+        const result = await api?.openFolder?.(file.fullPath)
+        if (result?.unavailable) setUnavailableFolder(file.rootFolder)
+        if (result?.ok) setPreviewingFile(null)
+        else setPreviewActionMessage(result?.error || 'The folder could not be opened.')
+      } catch { setPreviewActionMessage('The folder could not be opened. Please try again.') }
+    }} />}
   </div>
 }
 

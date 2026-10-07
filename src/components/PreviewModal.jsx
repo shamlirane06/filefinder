@@ -66,6 +66,8 @@ function PreviewModal({ file, onClose, onOpenFile, onOpenFolder }) {
             <div><span>File size</span><strong>{formatSize(file.size)}</strong></div>
             <div><span>Location</span><strong title={file.parentFolder}>{file.parentFolder || 'Unavailable'}</strong></div>
             <div><span>Modified</span><strong>{formatDate(file.modifiedAt)}</strong></div>
+            {(file.aiSummary || file.aiDescription || file.summary) && <div className="file-preview-ai-note"><span>AI summary</span><strong>{file.aiSummary || file.aiDescription || file.summary}</strong></div>}
+            {file.matchExplanation && <div className="file-preview-ai-note"><span>Why this matched</span><strong>{file.matchExplanation}</strong></div>}
           </aside>
         </div>
         <footer className="file-preview-actions">

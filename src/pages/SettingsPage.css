@@ -168,3 +168,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.settings-appearance-row,.settings-motion-row { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:52px; padding:10px 0; border-top:1px solid #eef0f4; }
+.settings-appearance-row > div,.settings-motion-row > span { display:grid; gap:4px; }
+.settings-appearance-row strong,.settings-motion-row strong { color:var(--text-primary); font-size:12px; font-weight:650; }
+.settings-appearance-row span,.settings-appearance-row p,.settings-motion-row small { color:var(--text-secondary); font-size:11px; }
+.settings-motion-row { cursor:pointer; }
+.settings-motion-row input { width:36px; height:20px; flex:0 0 auto; accent-color:var(--accent); cursor:pointer; }
