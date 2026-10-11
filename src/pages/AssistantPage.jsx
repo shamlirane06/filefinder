@@ -1,15 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
+import SearchBar from '../components/SearchBar'
 import PreviewModal from '../components/PreviewModal'
 import './AssistantPage.css'
 
 const api = typeof window !== 'undefined' ? window.fileFinder : null
 const PREVIEW_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf'])
 const EXAMPLES = [
-  'Find my certificates',
-  'Show recent PDFs',
-  'Where is my resume?',
-  'Find internship documents',
+  'Find my latest PDF files',
+  'Where is my graduation certificate?',
+  'Show images from a selected folder',
 ]
+
+function getFileKind(extension = '') {
+  const normalized = extension.toLowerCase()
+  if (normalized === '.pdf') return 'pdf'
+  if (['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tif', '.tiff', '.svg'].includes(normalized)) return 'image'
+  return 'document'
+}
 
 function formatSize(bytes) {
   const value = Number(bytes)
@@ -89,15 +96,15 @@ function AssistantFileCard({ file, onReindexFolder, indexing }) {
   return (
     <article className="search-result-card assistant-file-card">
       <div className="search-result-heading">
-        {thumbnail ? <img className="assistant-file-thumbnail" src={thumbnail} alt={`Preview of ${file.filename}`} /> : <div className="assistant-file-type" aria-hidden="true">
+        {thumbnail ? <img className="assistant-file-thumbnail" src={thumbnail} alt={`Preview of ${file.filename}`} /> : <div className={`assistant-file-type is-${getFileKind(file.extension)}`} aria-hidden="true">
           {file.extension ? file.extension.replace('.', '').slice(0, 4).toUpperCase() : 'FILE'}
         </div>}
         <div className="search-file-title">
-          <h3>{file.filename}</h3>
+          <h3 title={file.filename}>{file.filename}</h3>
           <p>{file.fileType || 'File'} · {formatSize(file.size)} · Modified {formatDate(file.modifiedAt)}</p>
         </div>
       </div>
-      <p className="search-file-location" title={file.parentFolder}>{file.parentFolder}</p>
+      <p className="search-file-location" title={file.parentFolder || 'Location unavailable'}>{file.parentFolder || 'Location unavailable'}</p>
       {file.documentType && <p className="assistant-file-document-type">{file.documentType}</p>}
       <div className="search-result-actions">
         <button type="button" onClick={openPreview} disabled={previewLoading}>{previewLoading ? 'Loading preview…' : 'Preview'}</button>
@@ -122,7 +129,7 @@ function AssistantFileCard({ file, onReindexFolder, indexing }) {
   )
 }
 
-function AssistantPage({ folders, onAddFolder, onReindexFolder, onReindexAll, indexing, desktopAvailable }) {
+function AssistantPage({ folders, onAddFolder, onReindexFolder, onReindexAll, indexing, desktopAvailable, searchQuery, onSearchQueryChange, onRememberSearch, onNavigate }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -132,8 +139,21 @@ function AssistantPage({ folders, onAddFolder, onReindexFolder, onReindexAll, in
   const indexedCount = folders.reduce((total, folder) => total + (Number(folder.fileCount) || 0), 0)
 
   useEffect(() => {
-    messageList.current?.scrollTo({ top: messageList.current.scrollHeight, behavior: 'smooth' })
+    const reducedMotion = document.documentElement.dataset.reducedMotion === 'true'
+      || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    messageList.current?.scrollTo({ top: messageList.current.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' })
   }, [messages, loading])
+
+  useEffect(() => {
+    function focusAssistantSearch(event) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        document.querySelector('.assistant-toolbar-search .search-input')?.focus()
+      }
+    }
+    window.addEventListener('keydown', focusAssistantSearch)
+    return () => window.removeEventListener('keydown', focusAssistantSearch)
+  }, [])
 
   async function submitQuestion(question = input) {
     const text = String(question || '').trim().slice(0, 600)
@@ -163,12 +183,39 @@ function AssistantPage({ folders, onAddFolder, onReindexFolder, onReindexAll, in
     }
   }
 
+  function handleToolbarSearch(query) {
+    const value = String(query || '').trim()
+    if (!value) return
+    onSearchQueryChange?.(value)
+    onRememberSearch?.(value)
+    onNavigate?.('search')
+  }
+
   return (
     <div className="page assistant-page">
-      <header className="page-header">
-        <div className="page-eyebrow">Assistant</div>
-        <h1 className="page-title">Find files with AI</h1>
-        <p className="page-subtitle">Describe a file or ask where it is in your indexed folders.</p>
+      <div className="assistant-toolbar">
+        <div className="assistant-toolbar-search">
+          <SearchBar
+            value={searchQuery || ''}
+            onChange={onSearchQueryChange}
+            onSubmit={handleToolbarSearch}
+            placeholder="Search your files..."
+            shortcutHint="Ctrl + K"
+            showSubmitButton={false}
+          />
+        </div>
+      </div>
+
+      <div className="assistant-content">
+      <header className="assistant-page-header">
+        <div className="assistant-heading-copy">
+          <span className="page-eyebrow">AI Assistant</span>
+          <h1 className="page-title">AI Assistant</h1>
+          <p className="page-subtitle">Ask questions about files in your selected folders and get answers grounded in your local index.</p>
+        </div>
+        <div className={`assistant-index-chip${indexing ? ' is-indexing' : ''}`} role="status">
+          <i aria-hidden="true" />{indexing ? 'Updating local index' : `${indexedCount.toLocaleString()} indexed ${indexedCount === 1 ? 'file' : 'files'}`}
+        </div>
       </header>
 
       {indexedCount === 0 && (
@@ -187,12 +234,12 @@ function AssistantPage({ folders, onAddFolder, onReindexFolder, onReindexAll, in
       )}
 
       <section className="assistant-chat-panel" aria-label="FileFinder assistant">
-        <div className="assistant-messages" ref={messageList} aria-live="polite">
+        <div className="assistant-messages" ref={messageList} aria-live="polite" aria-busy={loading}>
           {messages.length === 0 && (
             <div className="assistant-welcome">
-              <div className="assistant-welcome-mark" aria-hidden="true">✦</div>
-              <h2>Ask me to find a file.</h2>
-              <p>Answers are grounded in your indexed files, with source files shown alongside the response.</p>
+              <div className="assistant-welcome-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2.8 14 10l7.2 2-7.2 2-2 7.2L10 14l-7.2-2L10 10z"/><path d="m19 2 .6 2.4L22 5l-2.4.6L19 8l-.6-2.4L16 5l2.4-.6z"/></svg></div>
+              <h2>What are you looking for?</h2>
+              <p>{indexedCount > 0 ? 'Ask in everyday language. Answers are grounded in your indexed files, with source files shown alongside the response.' : 'Add a folder to build your local index, then ask questions about the files you selected.'}</p>
               <div className="assistant-examples">
                 {EXAMPLES.map((example) => (
                   <button type="button" key={example} onClick={() => submitQuestion(example)} disabled={loading || !desktopAvailable}>
@@ -251,6 +298,7 @@ function AssistantPage({ folders, onAddFolder, onReindexFolder, onReindexAll, in
         </form>
         <p className="assistant-privacy-note">Answers use indexed file details. Only relevant candidate metadata may be sent to your configured AI provider.</p>
       </section>
+      </div>
     </div>
   )
 }
