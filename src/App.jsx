@@ -16,6 +16,17 @@ const PAGES = {
   settings: SettingsPage,
 }
 
+const THEME_STORAGE_KEY = 'filefinder-theme'
+
+function getInitialTheme() {
+  try {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY)
+    if (saved === 'light' || saved === 'dark') return saved
+  } catch { /* Fall back to the operating-system preference. */ }
+
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
 function WindowControls() {
   const api = typeof window !== 'undefined' ? window.fileFinder : null
   const [maximized, setMaximized] = useState(false)
@@ -40,8 +51,24 @@ function App() {
   const [activePage, setActivePage] = useState('home')
   const [searchQuery, setSearchQuery] = useState('')
   const [recentSearches, setRecentSearches] = useState([])
+  const [theme, setTheme] = useState(getInitialTheme)
+
   useEffect(() => {
-    document.documentElement.dataset.reducedMotion = localStorage.getItem('filefinder-reduced-motion') === 'true' ? 'true' : 'false'
+    document.documentElement.dataset.theme = theme
+    document.documentElement.style.colorScheme = theme
+    try { localStorage.setItem(THEME_STORAGE_KEY, theme) } catch { /* Keep the current-session preference. */ }
+  }, [theme])
+
+  useEffect(() => {
+    try {
+      document.documentElement.dataset.reducedMotion = localStorage.getItem('filefinder-reduced-motion') === 'true' ? 'true' : 'false'
+    } catch {
+      document.documentElement.dataset.reducedMotion = 'false'
+    }
+  }, [])
+
+  const toggleTheme = useCallback(() => {
+    setTheme((current) => current === 'dark' ? 'light' : 'dark')
   }, [])
   const rememberSearch = useCallback((query) => {
     const value = String(query || '').trim()
@@ -73,12 +100,15 @@ function App() {
       <Sidebar
         activePage={activePage}
         onNavigate={setActivePage}
+        theme={theme}
+        onToggleTheme={toggleTheme}
         folderCount={folders.length}
         indexing={indexing}
-        totalFiles={totalFiles}
       />
       <main className="main-area">
         <Page
+          theme={theme}
+          onToggleTheme={toggleTheme}
           folders={folders}
           loading={loading}
           adding={adding}

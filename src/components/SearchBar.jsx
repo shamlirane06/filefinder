@@ -6,6 +6,8 @@ function SearchBar({
   onSubmit,
   placeholder = 'What are you looking for?',
   disabled = false,
+  shortcutHint = '',
+  showSubmitButton = true,
 }) {
   function handleSubmit(event) {
     event.preventDefault()
@@ -36,10 +38,9 @@ function SearchBar({
           disabled={disabled}
           aria-label="Search files"
         />
+        {shortcutHint && <kbd className="search-shortcut-hint" aria-hidden="true">{shortcutHint}</kbd>}
       </div>
-      <button type="submit" className="search-button" disabled={disabled}>
-        Search
-      </button>
+      {showSubmitButton && <button type="submit" className="search-button" disabled={disabled}>Search</button>}
     </form>
   )
 }

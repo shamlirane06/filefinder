@@ -3,7 +3,7 @@ import './Sidebar.css'
 const NAV_ITEMS = [
   {
     id: 'home',
-    label: 'Dashboard',
+    label: 'Home',
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path
@@ -62,29 +62,23 @@ const NAV_ITEMS = [
   },
 ]
 
-function Sidebar({ activePage, onNavigate, folderCount, indexing, totalFiles }) {
-  const statusLabel = indexing ? 'Indexing' : 'Ready'
-  let statusHint = 'Add a folder to build your local index.'
-
-  if (indexing) {
-    statusHint = 'Scanning selected folders…'
-  } else if (folderCount > 0) {
-    statusHint =
-      totalFiles > 0
-        ? `${totalFiles.toLocaleString()} files indexed`
-        : `${folderCount} folder${folderCount === 1 ? '' : 's'} selected`
-  }
+function Sidebar({ activePage, onNavigate, folderCount, indexing, theme, onToggleTheme }) {
+  const statusLabel = indexing ? 'Indexing files…' : folderCount ? 'Local index ready' : 'Local index is empty'
+  const statusHint = indexing
+    ? 'Scanning your selected folders'
+    : folderCount
+      ? 'Your files are indexed and ready'
+      : 'Add a folder to build your local index'
 
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <div className="brand-icon" aria-hidden="true">
-          <svg width="21" height="21" viewBox="0 0 24 24" fill="none">
-            <path d="M3.5 7.5h7l1.7 2H20a1 1 0 0 1 1 1v7.7a1.3 1.3 0 0 1-1.3 1.3H4.3A1.3 1.3 0 0 1 3 18.2V8a.5.5 0 0 1 .5-.5Z" stroke="white" strokeWidth="1.6" strokeLinejoin="round" />
-            <circle cx="11" cy="13" r="3" stroke="white" strokeWidth="1.5" />
-            <path d="m13.2 15.2 2.2 2.2M18 4v3M16.5 5.5h3" stroke="white" strokeWidth="1.4" strokeLinecap="round" />
-          </svg>
-        </div>
+        <div className="brand-icon" aria-hidden="true"><svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+          <path d="M20 2.5 37.5 12.5 20 22.5 2.5 12.5 20 2.5Z" fill="var(--color-action-blue)" />
+          <path d="M2.5 17.5 20 27.5 37.5 17.5v7.5L20 35 2.5 25v-7.5Z" fill="var(--color-action-hover)" />
+          <path d="m12.5 7 17.5 10-10 5.75L2.5 12.5 12.5 7Z" fill="var(--color-border-accent)" />
+          <path d="m20 22.5 7.5-4.3v7.5L20 30l-7.5-4.3v-7.5l7.5 4.3Z" fill="var(--color-primary-navy)" />
+        </svg></div>
         <span className="brand-name">FileFinder AI</span>
       </div>
 
@@ -103,14 +97,31 @@ function Sidebar({ activePage, onNavigate, folderCount, indexing, totalFiles }) 
         ))}
       </nav>
 
-      <div className="sidebar-status">
-        <div className="status-row">
+      {activePage !== 'home' && <button
+        type="button"
+        className="sidebar-theme-toggle"
+        onClick={onToggleTheme}
+        aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+        title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+      >
+        <span className="sidebar-theme-icon" aria-hidden="true">
+          {theme === 'dark' ? (
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></svg>
+          ) : (
+            <svg viewBox="0 0 24 24"><path d="M20.3 15.3A8.5 8.5 0 0 1 8.7 3.7 8.5 8.5 0 1 0 20.3 15.3Z" /></svg>
+          )}
+        </span>
+        <span>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</span>
+      </button>}
+
+      <button type="button" className="sidebar-status" onClick={() => onNavigate('settings')} aria-label="Manage local index folders">
+        <span className="status-row">
           <span className={`status-dot${indexing ? ' indexing' : ''}`} aria-hidden="true" />
-          <span className="status-label">{indexing ? statusLabel : 'Indexed locally'}</span>
-        </div>
-        <p className="status-hint">{statusHint}</p>
-        {folderCount > 0 && <div className="sidebar-index-stats"><strong>{folderCount.toLocaleString()}</strong><span>folders</span><i /><strong>{totalFiles.toLocaleString()}</strong><span>files</span></div>}
-      </div>
+          <span className="status-label">{statusLabel}</span>
+        </span>
+        <span className="status-hint">{statusHint}</span>
+        <svg className="sidebar-status-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" /></svg>
+      </button>
 
     </aside>
   )

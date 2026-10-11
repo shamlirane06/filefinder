@@ -4,6 +4,7 @@ import './SettingsPage.css'
 const api = typeof window !== 'undefined' ? window.fileFinder : null
 
 function SettingsPage({
+  theme = 'light',
   folders,
   indexing,
   totalFiles,
@@ -199,7 +200,7 @@ function SettingsPage({
       <section className="settings-section">
         <h2>Appearance</h2>
         <div className="settings-appearance-row">
-          <div><strong>Theme</strong><span>Light</span></div>
+          <div><strong>Theme</strong><span>{theme === 'dark' ? 'Dark' : 'Light'}</span></div>
           <p>The current FileFinder AI theme.</p>
         </div>
         <label className="settings-motion-row">

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, nativeImage, screen } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { randomUUID } from 'crypto'
@@ -228,9 +228,11 @@ async function runIndexForFolders(folders) {
 }
 
 function createWindow() {
+  const { width: workAreaWidth, height: workAreaHeight } = screen.getPrimaryDisplay().workAreaSize
   mainWindow = new BrowserWindow({
-    width: 1180,
-    height: 780,
+    width: Math.max(760, Math.min(1586, workAreaWidth)),
+    height: Math.max(520, Math.min(950, workAreaHeight)),
+    center: true,
     frame: false,
     autoHideMenuBar: true,
     minWidth: 760,

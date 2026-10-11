@@ -49,6 +49,18 @@
   color: var(--text-muted);
 }
 
+.search-shortcut-hint {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border-radius: 8px;
+  background: var(--color-surface-hover);
+  color: var(--color-secondary-text);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
 .search-input:disabled {
   opacity: 0.6;
 }
