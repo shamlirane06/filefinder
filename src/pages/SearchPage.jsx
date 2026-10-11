@@ -29,6 +29,14 @@ function formatDate(value) {
 }
 
 const PREVIEW_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf'])
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tif', '.tiff', '.svg'])
+
+function getFileKind(extension = '') {
+  const normalized = extension.toLowerCase()
+  if (normalized === '.pdf') return 'pdf'
+  if (IMAGE_EXTENSIONS.has(normalized)) return 'image'
+  return 'document'
+}
 
 function SearchResultPreview({ file, onUnavailable, onOpenPreview }) {
   const previewKey = `${file.fullPath}:${file.size}:${file.modifiedAt}`
@@ -69,9 +77,9 @@ function SearchResultPreview({ file, onUnavailable, onOpenPreview }) {
     return <div className="search-result-preview-placeholder is-unavailable" role="status">File unavailable</div>
   }
   return (
-    <div className="search-result-preview-placeholder" aria-label={preview.status === 'loading' ? 'Loading preview' : 'Preview unavailable'}>
+    <div className="search-result-preview-placeholder" aria-label={currentPreview.status === 'loading' ? 'Loading preview' : currentPreview.status === 'unavailable' ? 'File unavailable' : 'Preview unavailable'}>
       <span>{file.extension ? file.extension.replace('.', '').slice(0, 4).toUpperCase() : 'FILE'}</span>
-      {currentPreview.status !== 'loading' && <small>Preview unavailable</small>}
+      {currentPreview.status !== 'loading' && currentPreview.status !== 'unsupported' && <small>Preview unavailable</small>}
     </div>
   )
 }
@@ -117,6 +125,17 @@ function SearchPage({
   const indexedFolders = folders.filter((folder) => Number(folder.fileCount) > 0)
   const hasIndexedFolders = indexedFolders.length > 0
   const hasActiveFilter = Boolean(filters.fileType || filters.folderPath || filters.dateModified !== 'any')
+
+  useEffect(() => {
+    function focusSearch(event) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        document.querySelector('.search-toolbar-search .search-input')?.focus()
+      }
+    }
+    window.addEventListener('keydown', focusSearch)
+    return () => window.removeEventListener('keydown', focusSearch)
+  }, [])
 
   useEffect(() => {
     if (!api?.getSearchOptions) return
@@ -315,45 +334,55 @@ function SearchPage({
 
   return (
     <div className="page search-page">
-      <div className="page-header">
-        <div className="page-eyebrow">Search</div>
-        <h1 className="page-title">Search your files</h1>
-        <p className="page-subtitle">
-          Describe what you’re looking for in your indexed folders.
-        </p>
-        <p className="search-privacy-note">
-          For natural-language searches, only the query may be sent to your configured AI provider. File contents are not sent.
-        </p>
+      <div className="search-toolbar">
+        <div className="search-toolbar-search">
+          <SearchBar
+            value={searchQuery}
+            onChange={onSearchQueryChange}
+            onSubmit={handleSearch}
+            placeholder="Search your files..."
+            shortcutHint="Ctrl + K"
+            showSubmitButton={false}
+            disabled={!hasIndexedFolders}
+          />
+        </div>
       </div>
 
+      <div className="search-page-content">
+        <header className="search-page-header">
+          <div className="search-heading-copy">
+            <span className="page-eyebrow">File search</span>
+            <h1 className="page-title">Search your files</h1>
+            <p className="page-subtitle">Find files by name, type, folder, or a natural-language description.</p>
+          </div>
+          <p className="search-privacy-note">
+            For natural-language searches, only the query may be sent to your configured AI provider. File contents are not sent.
+          </p>
+        </header>
+
       {!hasIndexedFolders ? (
-        <div className="search-empty-state">
+        <div className="search-empty-state is-no-index">
           {!desktopAvailable && (
             <p className="search-desktop-required" role="alert">
               <strong>Desktop app required</strong>
               <span>Please run FileFinder AI using the Electron desktop application.</span>
             </p>
           )}
-          <h2>No folders have been indexed yet.</h2>
+          <span className="search-empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 7.5h6l1.8 2h9.2v9A1.5 1.5 0 0 1 19 20H5a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M3.5 9.5 5 5h6l1.5 2.5"/></svg></span>
+          <h2>No indexed folders yet</h2>
+          <p>Add a folder to search its files from this device.</p>
           <button
             type="button"
             className="search-add-folder"
             onClick={onAddFolder}
-            disabled={adding || indexing}
+            disabled={!desktopAvailable || adding || indexing}
           >
-            {adding ? 'Opening…' : 'Add Folder'}
+            {adding ? 'Opening…' : 'Add folder'}
           </button>
         </div>
       ) : (
         <>
-          <SearchBar
-            value={searchQuery}
-            onChange={onSearchQueryChange}
-            onSubmit={handleSearch}
-            placeholder="Try “Find my graduation certificate”"
-          />
-
-          <div className="search-controls" aria-label="Search filters and sorting">
+          <div className="search-controls" role="group" aria-label="Search filters and sorting">
             <label className="search-control">
               <span>File Type</span>
               <select
@@ -413,17 +442,19 @@ function SearchPage({
             </div>
           )}
           {unavailableFolder && (
-            <button
-              type="button"
-              className="search-add-folder"
-              onClick={() => {
-                onReindexFolder?.(unavailableFolder)
-                setUnavailableFolder('')
-              }}
-              disabled={indexing}
-            >
-              {indexing ? 'Re-indexing…' : 'Re-index folder'}
-            </button>
+            <div className="search-unavailable-notice" role="alert">
+              <span>A file in this folder is unavailable. It may have been moved or deleted.</span>
+              <button
+                type="button"
+                onClick={() => {
+                  onReindexFolder?.(unavailableFolder)
+                  setUnavailableFolder('')
+                }}
+                disabled={indexing}
+              >
+                {indexing ? 'Re-indexing…' : 'Re-index folder'}
+              </button>
+            </div>
           )}
 
           {loading ? (
@@ -435,7 +466,8 @@ function SearchPage({
           ) : null}
 
           {!loading && hasSubmitted && (submittedQuery || hasActiveFilter) && resultCount === 0 && !error && (
-            <div className="search-empty-state" role="status">
+            <div className="search-empty-state is-no-results" role="status">
+              <span className="search-empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.5 15.5 4.2 4.2M8.5 10.8h4.6"/></svg></span>
               <h2>No matching files found.</h2>
               <p>Try another description, a filename, a file type, or another indexed folder.</p>
             </div>
@@ -449,7 +481,8 @@ function SearchPage({
             <p className="search-hint">Search by filename, extension, folder, or path.</p>
           )}
 
-          <div className="search-results" aria-live="polite">
+          <div className="search-results" aria-live="polite" aria-busy={loading}>
+            {(results.length > 0 || loading) && <div className="search-results-list-heading" aria-hidden="true"><span>Name</span><span>Location</span><span>Modified</span><span>Size</span><span /></div>}
             {selectedIndexedResults.length > 0 && (
               <div className="organization-selection-toolbar">
                 <span>{selectedIndexedResults.length} {selectedIndexedResults.length === 1 ? 'file' : 'files'} selected</span>
@@ -463,29 +496,37 @@ function SearchPage({
               </div>
             )}
             {results.map((file) => (
-              <article className="search-result-card" key={file.fullPath}>
-                <label className="search-result-selection">
-                  <input
-                    type="checkbox"
-                    checked={selectedResultPaths.includes(file.fullPath)}
-                    onChange={() => toggleResultSelection(file.fullPath)}
-                    aria-label={`Select ${file.filename} for organization suggestions`}
-                  />
-                </label>
-                <div className="search-result-heading">
-                  <SearchResultPreview
-                    file={file}
-                    onUnavailable={setUnavailableFolder}
-                    onOpenPreview={openLargePreview}
-                  />
-                  <div className="search-file-title">
-                    <h2>{file.filename}</h2>
-                    <p>{file.fileType || 'File'} · {formatSize(file.size)} · Modified {formatDate(file.modifiedAt)}</p>
+              <article className={`search-result-card${selectedResultPaths.includes(file.fullPath) ? ' is-selected' : ''}`} key={file.fullPath}>
+                <div className="search-result-summary">
+                  <div className="search-result-heading">
+                    <SearchResultPreview
+                      file={file}
+                      onUnavailable={setUnavailableFolder}
+                      onOpenPreview={openLargePreview}
+                    />
+                    <div className="search-file-title">
+                      <h2 title={file.filename}>{file.filename}</h2>
+                      <span className="search-file-type-meta">
+                        <i className={`search-file-type-icon is-${getFileKind(file.extension)}`} aria-hidden="true">{file.extension?.replace('.', '').slice(0, 3).toUpperCase() || 'FILE'}</i>
+                        <span className={`search-file-type is-${getFileKind(file.extension)}`}>{file.fileType || 'File'}</span>
+                      </span>
+                    </div>
                   </div>
+                  <p className="search-file-location" title={file.parentFolder || 'Location unavailable'}>
+                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.8 4.3h4.1l1.2 1.4h7v6.8H1.8z"/><path d="M2 6h12"/></svg>
+                    <span>{file.parentFolder || 'Location unavailable'}</span>
+                  </p>
+                  <time className="search-file-date" dateTime={file.modifiedAt || undefined}>{formatDate(file.modifiedAt)}</time>
+                  <span className="search-file-size">{formatSize(file.size)}</span>
+                  <label className="search-result-selection">
+                    <input
+                      type="checkbox"
+                      checked={selectedResultPaths.includes(file.fullPath)}
+                      onChange={() => toggleResultSelection(file.fullPath)}
+                      aria-label={`Select ${file.filename} for organization suggestions`}
+                    />
+                  </label>
                 </div>
-                <p className="search-file-location" title={file.parentFolder}>
-                  {file.parentFolder}
-                </p>
                 {file.aiMatch && (
                   <div className="search-ai-match">
                     <span>AI match</span>
@@ -598,6 +639,7 @@ function SearchPage({
           </section>
         </div>
       )}
+      </div>
     </div>
   )
 }
