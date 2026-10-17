@@ -7,7 +7,38 @@
   background: var(--color-app-background);
 }
 
-.settings-content { width: 100%; max-width: 1240px; margin: 0 auto; }
+.settings-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 66.7%) minmax(0, 1fr);
+  align-items: center;
+  min-height: 78px;
+  padding: 18px 0 12px;
+  margin: 0 -28px;
+  border-bottom: 1px solid var(--color-border);
+}
+.settings-toolbar-search { min-width: 0; }
+.settings-toolbar-search .search-bar { width: 100%; max-width: none; }
+.settings-toolbar-search .search-input-wrap {
+  min-width: 0;
+  height: 46px;
+  gap: 12px;
+  padding: 0 14px;
+  border-color: var(--color-border);
+  border-radius: 13px;
+  background: var(--color-surface);
+  box-shadow: 0 1px 4px rgb(23 43 77 / 5%);
+}
+.settings-toolbar-search .search-input-wrap:focus-within {
+  border-color: var(--color-action-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-action-blue) 15%, transparent);
+}
+.settings-toolbar-search .search-icon { width: 20px; height: 20px; color: var(--color-secondary-text); }
+.settings-toolbar-search .search-ai-mark { display: none; }
+.settings-toolbar-search .search-input { min-width: 0; color: var(--color-main-text); font-size: 14px; }
+.settings-toolbar-search .search-input::placeholder { color: var(--color-secondary-text); opacity: .82; }
+.settings-toolbar-search .search-shortcut-hint { font-size: 12px; }
+
+.settings-content { width: 100%; max-width: 1240px; padding-top: 25px; margin: 0 auto; }
 .settings-page-header { margin-bottom: 19px; -webkit-app-region: drag; }
 .settings-page-header .page-eyebrow { margin-bottom: 7px; color: var(--color-secondary-text); font-size: 10px; font-weight: 650; letter-spacing: .06em; }
 .settings-page-header .page-title { color: var(--color-primary-navy); font-size: clamp(27px, 2.1vw, 34px); font-weight: 680; letter-spacing: -.035em; line-height: 1.2; }
@@ -149,12 +180,16 @@
 
 @media (max-width: 900px) {
   .page.settings-page { padding: 28px 24px 32px; }
+  .settings-toolbar { margin-right: -22px; margin-left: -22px; }
   .settings-grid { grid-template-columns: minmax(0, 1fr); }
   .settings-section.is-wide { grid-column: auto; }
 }
 
 @media (max-width: 680px) {
   .page.settings-page { padding: 20px 16px 28px; }
+  .settings-toolbar { grid-template-columns: minmax(0, 1fr); min-height: 60px; padding: 7px 16px 9px; margin: 0 -16px; }
+  .settings-toolbar-search .search-input-wrap { height: 42px; padding-inline: 10px; }
+  .settings-content { padding-top: 19px; }
   .settings-section { padding: 14px; }
   .settings-section-heading { align-items: flex-start; }
   .settings-section-heading .settings-action-btn { min-height: 31px; padding-inline: 8px; }

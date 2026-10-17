@@ -271,7 +271,7 @@
 @keyframes assistant-spin { to { transform:rotate(360deg); } }
 
 .assistant-index-notice { border-color:#e5e1fa; background:#fbfaff; }
-.assistant-message-user .assistant-message-text { color:#37345d; }
+.assistant-message-user .assistant-message-text { color: var(--color-main-text); }
 
 .assistant-input-row button:disabled {
   cursor: not-allowed;

@@ -52,7 +52,7 @@ app.whenReady().then(async () => {
     const selected = [documentsPath, legalPath]
     const db = getDatabase()
     const timestamps = [
-      [path.join(documentsPath, 'Internship_Certificate.pdf'), '2026-10-02T10:00:00.000Z'],
+      [path.join(documentsPath, 'Internship_Certificate.pdf'), new Date(Date.now() - 2 * 86400000).toISOString()],
       [path.join(documentsPath, 'reports', 'Certificate_2025.jpg'), '2025-03-03T10:00:00.000Z'],
       [path.join(documentsPath, 'Budget.pdf'), '2020-01-01T10:00:00.000Z'],
       [path.join(legalPath, 'Degree_Certificate.PDF'), '2024-04-04T10:00:00.000Z'],

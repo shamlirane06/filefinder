@@ -64,6 +64,14 @@ function RecentFile({ file, onActionError, onPreview }) {
       setMessage(result?.ok ? 'Opened' : result?.unavailable ? 'Unavailable' : 'Could not open')
     } catch { setMessage('Could not open') }
   }
+  async function openFolder() {
+    setMenuOpen(false)
+    try {
+      const result = await api?.openFolder?.(file.fullPath)
+      if (result?.unavailable) onActionError(file.rootFolder)
+      setMessage(result?.ok ? 'Opened containing folder' : result?.unavailable ? 'Unavailable' : 'Could not open folder')
+    } catch { setMessage('Could not open folder') }
+  }
   async function previewFile() {
     setMenuOpen(false)
     if (!api?.getFilePreview) { setMessage('Preview is unavailable in this view.'); return }
@@ -92,6 +100,7 @@ function RecentFile({ file, onActionError, onPreview }) {
       {menuOpen && <div className="dashboard-file-menu">
         {PREVIEW_EXTENSIONS.has(extension) && <button type="button" onClick={previewFile}>Preview</button>}
         <button type="button" onClick={openFile}>Open file</button>
+        <button type="button" onClick={openFolder}>Open folder</button>
       </div>}
     </div>
     {message && <span className="dashboard-file-status" role="status">{message}</span>}
@@ -289,7 +298,7 @@ function HomePage({ theme, onToggleTheme, folders, loading: foldersLoading, addi
         {recentSearches?.length > 0 && <section className="home-recent-search-panel"><div className="home-rail-heading"><h2>Recent searches</h2></div><div className="dashboard-search-list">{recentSearches.map((query) => <button key={query} onClick={() => handleSearch(query)}><span aria-hidden="true">⌕</span>{query}</button>)}</div></section>}
       </aside>
     </div>
-    {error && <p className="dashboard-error" role="alert">{error === 'Folder already added.' ? error : 'The folder action could not be completed. Please try again.'}</p>}
+    {error && <p className="dashboard-error" role="alert">{!desktopAvailable ? 'Run FileFinder AI in its Electron desktop app to access your local index.' : error === 'Folder already added.' ? error : 'The folder action could not be completed. Please try again.'}</p>}
     {unavailableFolder && <div className="dashboard-file-unavailable" role="alert"><div><strong>File unavailable</strong><span>This file may have been moved or deleted.</span></div><button type="button" onClick={() => { onReindexFolder?.(unavailableFolder); setUnavailableFolder('') }} disabled={indexing}>{indexing ? 'Re-indexing…' : 'Re-index folder'}</button><button type="button" aria-label="Dismiss file unavailable message" onClick={() => setUnavailableFolder('')}>×</button></div>}
     {previewActionMessage && <p className="dashboard-error" role="status">{previewActionMessage}</p>}
     {previewingFile && <PreviewModal file={previewingFile} onClose={() => setPreviewingFile(null)} onOpenFile={async (file) => {

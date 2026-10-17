@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import FolderList from '../components/FolderList'
+import SearchBar from '../components/SearchBar'
 import './SettingsPage.css'
 
 const api = typeof window !== 'undefined' ? window.fileFinder : null
@@ -25,6 +26,10 @@ function SettingsPage({
   onClearIndex,
   formatRelativeTime,
   desktopAvailable,
+  searchQuery = '',
+  onSearchQueryChange,
+  onRememberSearch,
+  onNavigate,
 }) {
   const [aiStatus, setAiStatus] = useState(null)
   const [aiProgress, setAiProgress] = useState(null)
@@ -34,6 +39,17 @@ function SettingsPage({
   const [reducedMotion, setReducedMotion] = useState(() => {
     try { return localStorage.getItem('filefinder-reduced-motion') === 'true' } catch { return false }
   })
+
+  useEffect(() => {
+    function focusSettingsSearch(event) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        document.querySelector('.settings-toolbar-search .search-input')?.focus()
+      }
+    }
+    window.addEventListener('keydown', focusSettingsSearch)
+    return () => window.removeEventListener('keydown', focusSettingsSearch)
+  }, [])
 
   function updateReducedMotion(enabled) {
     setReducedMotion(enabled)
@@ -95,6 +111,14 @@ function SettingsPage({
     }
   }
 
+  function handleToolbarSearch(query) {
+    const value = String(query || '').trim()
+    if (!value) return
+    onSearchQueryChange?.(value)
+    onRememberSearch?.(value)
+    onNavigate?.('search')
+  }
+
   const progressPercent = aiProgress?.total > 0
     ? Math.min(100, Math.round((aiProgress.current / aiProgress.total) * 100))
     : 0
@@ -105,6 +129,18 @@ function SettingsPage({
 
   return (
     <div className="page settings-page">
+      <div className="settings-toolbar">
+        <div className="settings-toolbar-search">
+          <SearchBar
+            value={searchQuery}
+            onChange={onSearchQueryChange}
+            onSubmit={handleToolbarSearch}
+            placeholder="Search your files..."
+            shortcutHint="Ctrl + K"
+            showSubmitButton={false}
+          />
+        </div>
+      </div>
       <div className="settings-content">
         <header className="settings-page-header">
           <span className="page-eyebrow">PREFERENCES</span>
