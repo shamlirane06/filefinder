@@ -6,10 +6,10 @@ function FolderIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
         d="M3.5 8.5h6l1.8-2H20.5v13a1 1 0 0 1-1 1H4.5a1 1 0 0 1-1-1v-11Z"
-        stroke="#2563eb"
+        stroke="currentColor"
         strokeWidth="1.7"
         strokeLinejoin="round"
-        fill="#eff4ff"
+        fill="var(--color-action-soft)"
       />
     </svg>
   )
@@ -38,6 +38,7 @@ function FolderList({
   onRemove,
   onReindex,
   formatRelativeTime,
+  actionsDisabled = false,
 }) {
   const [pendingRemoval, setPendingRemoval] = useState(null)
   const cancelRemoveButton = useRef(null)
@@ -179,7 +180,7 @@ function FolderList({
                   type="button"
                   className="folder-reindex"
                   onClick={() => onReindex?.(folder.path)}
-                  disabled={indexing}
+                  disabled={indexing || actionsDisabled}
                   aria-label={`${indexActionLabel} ${folder.name}`}
                   title={indexActionLabel}
                 >
@@ -189,7 +190,7 @@ function FolderList({
                   type="button"
                   className="folder-remove"
                   onClick={(event) => setPendingRemoval({ folder, trigger: event.currentTarget })}
-                  disabled={indexing}
+                  disabled={indexing || actionsDisabled}
                   aria-label={`Remove ${folder.name}`}
                   title="Remove folder"
                 >
@@ -233,7 +234,7 @@ function FolderList({
               <button type="button" className="folder-dialog-cancel" ref={cancelRemoveButton} onClick={closeRemoveDialog}>
                 Cancel
               </button>
-              <button type="button" className="folder-dialog-confirm" onClick={confirmRemove}>
+              <button type="button" className="folder-dialog-confirm" onClick={confirmRemove} disabled={indexing || actionsDisabled}>
                 Remove
               </button>
             </div>
